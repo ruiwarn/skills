@@ -1,0 +1,9 @@
+{
+  "RN7326": {
+    "appId": "chip_rn7326_manual",
+    "description": "RN7326 计量芯片参考手册",
+    "apiBase": "http://192.168.1.12:3000/api",
+    "apiKey": "fastgpt-laECHFTz1hqoSaASnD91WfYclmJs76dsvGWoAGMB76DWgtH4WvNZWsUdOe6sYkxQ"
+  }
+}
+
