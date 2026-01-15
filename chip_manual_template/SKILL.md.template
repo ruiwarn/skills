@@ -1,16 +1,16 @@
 ---
-name: rn7326-manual
-description: Lookup MCU reference manual details (registers, peripherals, clocks, interrupts, DMA, GPIO, timers) for supported chips such as RN7326. Use when users ask about RN7326, RN202x, RN2026, RN2028 chip registers, bit definitions, I2C/SPI/UART/CAN timing, metering algorithms, calibration, electrical characteristics, or pin configurations.
+name: {{SKILL_NAME}}
+description: Lookup MCU reference manual details (registers, peripherals, clocks, interrupts, DMA, GPIO, timers) for {{CHIP_NAME}}. Use when users ask about {{CHIP_KEYWORDS}} chip registers, bit definitions, interface timing, {{MAIN_FEATURE}}, electrical characteristics, or pin configurations.
 ---
 
-# RN7326 / RN202x 用户手册查询 Skill
+# {{CHIP_NAME}} 用户手册查询 Skill
 
 ## 作用
 
-查询 RN7326 / RN202x 三相计量 SoC 的技术信息，包括：
+查询 {{CHIP_NAME}} {{CHIP_DESC}} 的技术信息，包括：
 - 寄存器定义、位域、地址、访问权限
 - I2C/SPI/UART/CAN 等接口时序
-- 计量算法、校准流程
+- {{MAIN_FEATURE}}
 - 电气特性、引脚复用
 - 中断、错误码、故障处理
 
@@ -21,10 +21,10 @@ description: Lookup MCU reference manual details (registers, peripherals, clocks
 ## 触发条件
 
 当用户询问以下内容时触发：
-- 芯片型号：RN7326、RN202x、RN2026、RN2028
+- 芯片型号：{{CHIP_KEYWORDS}}
 - 寄存器：地址(0x..)、位定义、默认值
 - 接口：I2C、SPI、UART、CAN 时序/配置
-- 计量：有功功率、无功功率、RMS、校准
+- {{TRIGGER_KEYWORDS}}
 - 硬件：引脚、GPIO、电气特性、应用电路
 - 系统：时钟、复位、DMA、中断
 
@@ -81,9 +81,9 @@ Grep(references/manual.md, pattern=关键词)
 
 | 文件 | 说明 |
 |------|------|
-| `references/register_index.md` | 寄存器快速索引（705个寄存器，含行号） |
+| `references/register_index.md` | 寄存器快速索引（含行号） |
 | `references/index.md` | 章节目录和检索指南 |
-| `references/manual.md` | 完整手册正文（约13000行） |
+| `references/manual.md` | 完整手册正文 |
 | `references/manual.pdf` | 原始PDF（备用验证） |
 
 ---
