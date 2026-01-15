@@ -1,95 +1,48 @@
 ---
-name: rn7326-manual
-description: Lookup MCU reference manual details (registers, peripherals, clocks, interrupts, DMA, GPIO, timers) for supported chips such as RN7326. Use when users ask about RN7326, RN202x, RN2026, RN2028 chip registers, bit definitions, I2C/SPI/UART/CAN timing, metering algorithms, calibration, electrical characteristics, or pin configurations.
+name: chip-manual
+description: Query MCU/chip reference manuals for register definitions, bit fields, addresses, peripheral configurations (I2C/SPI/UART/CAN timing), metering algorithms, calibration procedures, electrical characteristics, and pin configurations.
 ---
 
-# RN7326 / RN202x 用户手册查询 Skill
+# Chip Manual Query
 
-## 作用
+## CRITICAL: Do NOT read manual files directly!
 
-查询 RN7326 / RN202x 三相计量 SoC 的技术信息，包括：
-- 寄存器定义、位域、地址、访问权限
-- I2C/SPI/UART/CAN 等接口时序
-- 计量算法、校准流程
-- 电气特性、引脚复用
-- 中断、错误码、故障处理
+This skill uses Gemini API as backend. Always use the query script - never read files under `manuals/` directly, as they are too large and will overflow context.
 
-**所有回答必须以 references/ 目录下的资料为准。**
+## Supported Chips
 
----
+Read `config.yaml` to check available chips and their aliases.
 
-## 触发条件
-
-当用户询问以下内容时触发：
-- 芯片型号：RN7326、RN202x、RN2026、RN2028
-- 寄存器：地址(0x..)、位定义、默认值
-- 接口：I2C、SPI、UART、CAN 时序/配置
-- 计量：有功功率、无功功率、RMS、校准
-- 硬件：引脚、GPIO、电气特性、应用电路
-- 系统：时钟、复位、DMA、中断
-
----
-
-## 检索流程（强制执行）
-
-### Step 1: 查索引定位
-```
-先读取 references/register_index.md 或 references/index.md
-搜索关键词（寄存器名、地址、功能模块）
-找到对应的行号
+Or run:
+```bash
+python scripts/query_manual.py --list
 ```
 
-### Step 2: 精准读取
-```
-Read(references/manual.md, offset=行号-10, limit=80)
-读取寄存器详细定义和位域表格
-```
+## How to Use
 
-### Step 3: 补充搜索（如果Step1未找到）
-```
-Grep(references/manual.md, pattern=关键词)
-根据搜索结果行号再精准读取
+```bash
+python scripts/query_manual.py --chip <CHIP_NAME> "<question>"
 ```
 
-### Step 4: 组织回答
-```
-1. 结论（简洁直接）
-2. 依据（手册章节/表格/行号引用）
-3. 注意事项（如手册未明确则标注"推断"）
-```
-
----
-
-## 回答格式
-
-```markdown
-### 结论
-[简洁的答案]
-
-### 手册依据
-- 来源：manual.md / 章节 X.X.X / 行 NNNN
-- [引用的关键内容]
-
-### 注意事项
-- [工程建议或注意事项]
-- [若为推断，标注：⚠️ 手册未明确说明，以上为推断]
+Examples:
+```bash
+python scripts/query_manual.py --chip RN7326 "EMUCON register address"
+python scripts/query_manual.py -c V32G410 "GPIO config registers"
 ```
 
----
+## Response Format
 
-## 资料清单
+```json
+{
+  "chip": "RN7326",
+  "answer": "Answer based on manual content",
+  "model": "gemini-3-flash-preview",
+  "status": "success"
+}
+```
 
-| 文件 | 说明 |
-|------|------|
-| `references/register_index.md` | 寄存器快速索引（705个寄存器，含行号） |
-| `references/index.md` | 章节目录和检索指南 |
-| `references/manual.md` | 完整手册正文（约13000行） |
-| `references/manual.pdf` | 原始PDF（备用验证） |
+## Notes
 
----
-
-## 禁止事项
-
-- ❌ 不得凭记忆回答，必须检索后回答
-- ❌ 不得编造寄存器地址或位定义
-- ❌ 回答时必须给出来源引用（行号或章节）
+- Temperature=0 for deterministic output
+- Strictly based on manual content, no inference
+- Returns "not found" if manual doesn't contain the answer

@@ -1,0 +1,31 @@
+# Gemini API 配置
+# API Key 优先从环境变量 GEMINI_API_KEY 读取，如未设置则使用下方配置
+api_key: ""
+
+# 模型名称
+model: "gemini-3-flash-preview"
+
+# 芯片手册配置
+# 添加新芯片：在 manuals 下创建文件夹，放入 manual.md，然后在此添加配置
+chips:
+  RN7326:
+    path: "manuals/RN7326/manual.md"
+    description: "RN7326/RN202x 三相计量 SoC"
+    aliases:
+      - "RN202x"
+      - "RN2026"
+      - "RN2028"
+
+  V32G410X:
+    path: "manuals/V32G410X/V32G410x参考手册_V1.14.md"
+    description: "V32G410X 三相计量 SoC"
+    aliases:
+      - "V32G410"
+
+  # 示例：添加其他芯片
+  # STM32F103:
+  #   path: "manuals/STM32F103/manual.md"
+  #   description: "STM32F103 系列 ARM Cortex-M3 MCU"
+  #   aliases:
+  #     - "STM32F1"
+  #     - "F103"
