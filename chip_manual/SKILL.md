@@ -5,9 +5,7 @@ description: |
   1. Reference Manual (ref): Register definitions, bit fields, addresses, peripheral configs (I2C/SPI/UART/CAN timing), metering algorithms, calibration, electrical specs, pin configs
   2. API Reference (api): Driver library function interfaces, parameters, usage examples, init flows - for developing drivers from scratch
   NOTE: Not all chips have API docs. Use --list to check available document types before querying.
-allowed-tools:
-  - Bash(*query_manual.py*)
-  - Read(*config.yaml*)
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
 # Chip Manual Query
