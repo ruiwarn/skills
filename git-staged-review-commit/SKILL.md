@@ -1,6 +1,7 @@
 ---
 name: git-staged-review-commit
-description: Review staged Git changes, report issues, ask whether to fix or proceed, and if proceeding generate a Chinese commit message and commit the staged code. Use when the user wants a review of the staged diff and a commit workflow based on that review.
+description: "PRIORITY: This skill OVERRIDES @oracle or @agent mentions when trigger phrases match. Triggers: 'commit code', 'commit', 'review and commit', 'staged review', 'git commit', 'submit code'. Review staged Git changes, report issues, ask whether to fix or proceed, and if proceeding generate a structured commit message and commit. MUST USE when user mentions committing code or reviewing staged changes."
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
 # Git Staged Review Commit
