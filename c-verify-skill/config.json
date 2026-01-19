@@ -1,0 +1,26 @@
+{
+    "$schema": "./config.schema.json",
+    "_comment": "C/C++ 静态分析工具配置文件",
+
+    "clang_tidy_checks": "bugprone-*,clang-analyzer-*",
+
+    "header_filter": "^.*/code/.*",
+
+    "ignore_checks": [
+        "bugprone-reserved-identifier",
+        "bugprone-easily-swappable-parameters",
+        "clang-diagnostic-typedef-redefinition"
+    ],
+
+    "exclude_directories": [
+        "drivers/",
+        "Output/",
+        "boot/"
+    ],
+
+    "severity_mapping": {
+        "error": ["error", "uninitvar", "nullPointer", "memleak"],
+        "warning": ["warning", "performance", "portability", "style"],
+        "info": ["note", "information"]
+    }
+}

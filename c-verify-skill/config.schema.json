@@ -1,0 +1,71 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "C Verify Skill Configuration",
+    "description": "C/C++ 静态分析工具配置文件架构",
+    "type": "object",
+    "properties": {
+        "$schema": {
+            "type": "string",
+            "description": "JSON Schema 引用"
+        },
+        "_comment": {
+            "type": "string",
+            "description": "配置文件说明"
+        },
+        "clang_tidy_checks": {
+            "type": "string",
+            "description": "clang-tidy 检查规则，逗号分隔",
+            "default": "bugprone-*,clang-analyzer-*",
+            "examples": [
+                "bugprone-*,clang-analyzer-*",
+                "bugprone-*,clang-analyzer-*,modernize-*",
+                "-*,bugprone-*"
+            ]
+        },
+        "header_filter": {
+            "type": "string",
+            "description": "clang-tidy 头文件过滤正则表达式",
+            "examples": [
+                "^.*/code/.*",
+                "^/mnt/f/work_directory/Project/.*"
+            ]
+        },
+        "ignore_checks": {
+            "type": "array",
+            "description": "忽略的检查项列表（部分匹配）",
+            "items": {
+                "type": "string"
+            },
+            "examples": [
+                ["bugprone-reserved-identifier", "easily-swappable-parameters"]
+            ]
+        },
+        "exclude_directories": {
+            "type": "array",
+            "description": "排除的目录列表",
+            "items": {
+                "type": "string"
+            },
+            "default": ["drivers/", "Output/"]
+        },
+        "severity_mapping": {
+            "type": "object",
+            "description": "严重程度映射配置",
+            "properties": {
+                "error": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                },
+                "warning": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                },
+                "info": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                }
+            }
+        }
+    },
+    "additionalProperties": false
+}
