@@ -31,7 +31,7 @@ CHECKS="$DEFAULT_CHECKS"
 HEADER_FILTER=""
 SKIP_CPPCHECK=0
 SKIP_CLANG_TIDY=0
-OUTPUT_FORMAT="text"  # text, json, markdown
+OUTPUT_FORMAT="json"  # json (默认，AI友好), text, markdown
 GIT_MODE=""           # staged, modified, all
 DIRECTORY=""
 SEVERITY_FILTER=""    # error, warning, all
@@ -46,6 +46,9 @@ TOTAL_WARNINGS=0
 TOTAL_INFO=0
 declare -A FILE_ISSUES=()
 HAS_FILE_ISSUES=0
+JSON_ISSUES=()  # 存储所有问题用于JSON输出
+JSON_GLOBAL_ISSUES=()  # 存储全局问题（如 nofile）
+declare -A ISSUES_BY_CHECK=()  # 按检查项分组统计
 
 usage() {
     cat << EOF
@@ -70,11 +73,11 @@ ${BOLD}工具配置:${NC}
   --skip-clang-tidy        跳过 clang-tidy
 
 ${BOLD}输出控制:${NC}
-  --format <type>          输出格式: text, json, markdown (默认: text)
+  --format <type>          输出格式: json (默认, AI友好), text, markdown
   --severity <level>       严重程度过滤: error, warning, all (默认: all)
   --ignore <pattern>       忽略的警告类型 (可多次使用)
-  --summary                只显示汇总统计
-  -q, --quiet              静默模式，只输出错误
+  --summary                只显示汇总统计（仅text/markdown格式）
+  -q, --quiet              静默模式
 
 ${BOLD}其他:${NC}
   -h, --help               显示帮助信息
@@ -265,6 +268,19 @@ should_ignore() {
     return 1
 }
 
+# 将绝对路径转换为相对于项目根目录的路径
+to_relative_path() {
+    local abs_path="$1"
+    local rel_path="$abs_path"
+
+    # 如果是绝对路径且以项目根目录开头，则转换为相对路径
+    if [[ "$abs_path" = /* ]] && [[ "$abs_path" == "$PROJECT_ROOT"* ]]; then
+        rel_path="${abs_path#$PROJECT_ROOT/}"
+    fi
+
+    echo "$rel_path"
+}
+
 # 解析 clang-tidy 输出
 parse_clang_tidy_output() {
     local output="$1"
@@ -298,12 +314,24 @@ parse_clang_tidy_output() {
                 note) ((TOTAL_INFO++)) || true ;;
             esac
 
+            # 转换为相对路径
+            local rel_file
+            rel_file=$(to_relative_path "$file")
+
             # 记录到文件统计
-            FILE_ISSUES["$file"]=$((${FILE_ISSUES["$file"]:-0} + 1))
+            FILE_ISSUES["$rel_file"]=$((${FILE_ISSUES["$rel_file"]:-0} + 1))
             HAS_FILE_ISSUES=1
 
-            # 输出
-            if [[ $SUMMARY_ONLY -eq 0 ]]; then
+            # 按检查项分组统计
+            ISSUES_BY_CHECK["$check"]=$((${ISSUES_BY_CHECK["$check"]:-0} + 1))
+
+            # 存储到JSON数组（用于最终输出）
+            local json_escaped_message="${message//\\/\\\\}"
+            json_escaped_message="${json_escaped_message//\"/\\\"}"
+            JSON_ISSUES+=("{\"file\":\"$rel_file\",\"line\":$line_num,\"severity\":\"$severity\",\"message\":\"$json_escaped_message\",\"check\":\"$check\"}")
+
+            # 输出（非JSON格式立即输出）
+            if [[ $SUMMARY_ONLY -eq 0 && "$OUTPUT_FORMAT" != "json" ]]; then
                 case "$OUTPUT_FORMAT" in
                     text)
                         case "$severity" in
@@ -320,9 +348,6 @@ parse_clang_tidy_output() {
                             note) icon="🔵" ;;
                         esac
                         echo "| $icon | \`$file\` | $line_num | $message | \`$check\` |"
-                        ;;
-                    json)
-                        echo "{\"file\":\"$file\",\"line\":$line_num,\"severity\":\"$severity\",\"message\":\"$message\",\"check\":\"$check\"}"
                         ;;
                 esac
             fi
@@ -368,10 +393,31 @@ parse_cppcheck_output() {
                 info) ((TOTAL_INFO++)) || true ;;
             esac
 
-            FILE_ISSUES["$file"]=$((${FILE_ISSUES["$file"]:-0} + 1))
-            HAS_FILE_ISSUES=1
+            # 转换为相对路径
+            local rel_file
+            rel_file=$(to_relative_path "$file")
 
-            if [[ $SUMMARY_ONLY -eq 0 ]]; then
+            # 判断是否为全局问题
+            local json_escaped_message="${message//\\/\\\\}"
+            json_escaped_message="${json_escaped_message//\"/\\\"}"
+
+            if [[ "$file" == "nofile" || "$line_num" == "0" ]]; then
+                # 全局问题，单独存储
+                JSON_GLOBAL_ISSUES+=("{\"severity\":\"$mapped_severity\",\"message\":\"$json_escaped_message\",\"check\":\"$check\"}")
+            else
+                # 普通文件问题
+                FILE_ISSUES["$rel_file"]=$((${FILE_ISSUES["$rel_file"]:-0} + 1))
+                HAS_FILE_ISSUES=1
+
+                # 按检查项分组统计
+                ISSUES_BY_CHECK["$check"]=$((${ISSUES_BY_CHECK["$check"]:-0} + 1))
+
+                # 存储到JSON数组（用于最终输出）
+                JSON_ISSUES+=("{\"file\":\"$rel_file\",\"line\":$line_num,\"severity\":\"$mapped_severity\",\"message\":\"$json_escaped_message\",\"check\":\"$check\"}")
+            fi
+
+            # 输出（非JSON格式立即输出）
+            if [[ $SUMMARY_ONLY -eq 0 && "$OUTPUT_FORMAT" != "json" ]]; then
                 case "$OUTPUT_FORMAT" in
                     text)
                         case "$mapped_severity" in
@@ -388,9 +434,6 @@ parse_cppcheck_output() {
                             info) icon="🔵" ;;
                         esac
                         echo "| $icon | \`$file\` | $line_num | $message | \`$check\` |"
-                        ;;
-                    json)
-                        echo "{\"file\":\"$file\",\"line\":$line_num,\"severity\":\"$mapped_severity\",\"message\":\"$message\",\"check\":\"$check\"}"
                         ;;
                 esac
             fi
@@ -499,24 +542,78 @@ print_summary() {
             fi
             ;;
         json)
+            # 计算优先级
+            local priority="low"
+            if [[ $TOTAL_ERRORS -gt 0 ]]; then
+                priority="high"
+            elif [[ $TOTAL_WARNINGS -gt 5 ]]; then
+                priority="medium"
+            fi
+
             echo "{"
             echo "  \"summary\": {"
+            echo "    \"files_checked\": ${FILES_COUNT:-0},"
             echo "    \"errors\": $TOTAL_ERRORS,"
             echo "    \"warnings\": $TOTAL_WARNINGS,"
             echo "    \"info\": $TOTAL_INFO,"
-            echo "    \"total\": $total"
+            echo "    \"total\": $total,"
+            echo "    \"priority\": \"$priority\""
             echo "  },"
-            echo "  \"files\": {"
+
+            # 输出按检查项分组的统计
+            echo "  \"issues_by_check\": {"
             local first=1
+            for check in "${!ISSUES_BY_CHECK[@]}"; do
+                [[ $first -eq 0 ]] && echo ","
+                echo -n "    \"$check\": {\"count\": ${ISSUES_BY_CHECK[$check]}}"
+                first=0
+            done
+            echo ""
+            echo "  },"
+
+            # 输出所有问题
+            echo "  \"issues\": ["
+            local first=1
+            for issue in "${JSON_ISSUES[@]}"; do
+                [[ $first -eq 0 ]] && echo ","
+                echo -n "    $issue"
+                first=0
+            done
+            echo ""
+            echo "  ],"
+
+            # 输出全局问题
+            echo "  \"global_issues\": ["
+            local first=1
+            for issue in "${JSON_GLOBAL_ISSUES[@]}"; do
+                [[ $first -eq 0 ]] && echo ","
+                echo -n "    $issue"
+                first=0
+            done
+            echo ""
+            echo "  ],"
+
+            # 输出问题最多的前10个文件
+            echo "  \"top_files\": ["
             if [[ $HAS_FILE_ISSUES -eq 1 ]]; then
-                for file in "${!FILE_ISSUES[@]}"; do
+                local top_files=()
+                while IFS= read -r line; do
+                    top_files+=("$line")
+                done < <(for file in "${!FILE_ISSUES[@]}"; do
+                    echo "$file ${FILE_ISSUES[$file]}"
+                done | sort -k2 -nr | head -10)
+
+                local first=1
+                for entry in "${top_files[@]}"; do
+                    local file="${entry% *}"
+                    local count="${entry##* }"
                     [[ $first -eq 0 ]] && echo ","
-                    echo -n "    \"$file\": ${FILE_ISSUES[$file]}"
+                    echo -n "    {\"file\": \"$file\", \"issue_count\": $count}"
                     first=0
                 done
             fi
             echo ""
-            echo "  }"
+            echo "  ]"
             echo "}"
             ;;
     esac
@@ -563,8 +660,11 @@ main() {
 
     detect_compdb
 
-    # 输出头部
-    if [[ $QUIET -eq 0 ]]; then
+    # 记录文件数
+    FILES_COUNT=${#FILES[@]}
+
+    # 输出头部（JSON格式不输出头部，等最后一次性输出）
+    if [[ $QUIET -eq 0 && "$OUTPUT_FORMAT" != "json" ]]; then
         case "$OUTPUT_FORMAT" in
             text)
                 echo -e "${BOLD}C/C++ 静态分析${NC}"
@@ -583,14 +683,10 @@ main() {
                     echo "|------|------|------|------|--------|"
                 fi
                 ;;
-            json)
-                echo "{\"issues\":["
-                ;;
         esac
     fi
 
     # 运行检查
-    local first_json=1
     for file in "${FILES[@]}"; do
         [[ $QUIET -eq 0 && "$OUTPUT_FORMAT" == "text" && $SUMMARY_ONLY -eq 0 ]] && \
             echo -e "${CYAN}检查: $file${NC}"
@@ -599,11 +695,7 @@ main() {
         run_cppcheck "$file"
     done
 
-    # 输出尾部
-    if [[ "$OUTPUT_FORMAT" == "json" ]]; then
-        echo "],"
-    fi
-
+    # 输出汇总（JSON格式会输出完整的JSON对象）
     print_summary
 
     # 返回码
