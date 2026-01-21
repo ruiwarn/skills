@@ -381,6 +381,11 @@ parse_cppcheck_output() {
                 information) mapped_severity="info" ;;
             esac
 
+            # 过滤 cppcheck info 级别（不显示）
+            if [[ "$mapped_severity" == "info" ]]; then
+                continue
+            fi
+
             # 严重程度过滤
             if [[ "$SEVERITY_FILTER" == "error" && "$mapped_severity" != "error" ]]; then
                 continue
