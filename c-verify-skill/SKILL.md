@@ -1,6 +1,6 @@
 ---
 name: c-verify-skill
-description: Run C/C++ static analysis (clang-tidy/cppcheck) on code. Triggers: scan code, check quality, verify C code, check staged/modified files, find bugs, review before commit.
+description: Run C/C++ static analysis using clang-tidy and cppcheck to scan code, check quality, verify C code, detect bugs, review staged or modified files before commit.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
