@@ -1,0 +1,30 @@
+Debug/
+Release/
+settings/
+Output/
+
+# 屏蔽 Keil 编译器生成的临时文件和目录
+*.uvgui*
+Listings/
+Objects/
+jlinkLog.txt
+uv4*
+*.log
+cache
+build
+bin
+.DS_Store
+
+# Terminal Paste Image folder
+.cp-images/
+.cache/
+.ccb_config/
+.sisyphus/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*.bak
