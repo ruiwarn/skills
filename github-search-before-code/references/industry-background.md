@@ -56,6 +56,8 @@
 
 ### Keyword Strategies for Different Function Types
 
+#### Embedded / C / C++
+
 | Function Type | Keyword Strategy | Examples |
 |--------------|------------------|----------|
 | **Algorithm Implementation** | Algorithm name + "implementation" / "algorithm" | "FFT algorithm C", "Kalman filter embedded" |
@@ -65,3 +67,43 @@
 | **Data Processing** | Processing method + data type | "moving average filter", "circular buffer C" |
 | **Signal Processing** | Signal processing technique + domain | "harmonic analysis power", "phase detection" |
 | **State Machine/Workflow** | State machine type + application | "finite state machine C", "event driven framework" |
+
+#### Python
+
+| Function Type | Keyword Strategy | Examples |
+|--------------|------------------|----------|
+| **Web Scraping** | Target + "scraping" / "crawler" + library | "web scraping beautifulsoup", "API crawler requests" |
+| **Data Analysis** | Data type + "analysis" / "processing" | "pandas dataframe processing", "numpy array operations" |
+| **API Integration** | Service name + "API" + "Python" | "Stripe API Python", "OpenAI API integration" |
+| **CLI Tools** | Function + "CLI" / "argparse" | "command line tool argparse", "CLI utility click" |
+| **Automation** | Task + "automation" + "Python" | "file automation Python", "email automation script" |
+| **Machine Learning** | Algorithm + framework | "neural network pytorch", "classification sklearn" |
+
+#### Shell / Bash
+
+| Function Type | Keyword Strategy | Examples |
+|--------------|------------------|----------|
+| **System Automation** | Task + "script" / "automation" | "backup script bash", "deployment automation shell" |
+| **Log Processing** | "log" + processing method | "log parser awk", "log rotation script" |
+| **Monitoring** | Resource + "monitoring" | "disk space monitoring", "process health check" |
+| **Batch Operations** | Operation + "batch" / "bulk" | "batch file rename", "bulk image convert" |
+| **DevOps Tasks** | Tool + "automation" | "docker deployment script", "kubernetes health check" |
+
+#### JavaScript / TypeScript
+
+| Function Type | Keyword Strategy | Examples |
+|--------------|------------------|----------|
+| **Frontend Components** | Component type + framework | "dropdown menu react", "modal component vue" |
+| **State Management** | "state management" + framework | "redux toolkit", "zustand state" |
+| **API Client** | Service + "client" + framework | "REST client axios", "GraphQL client" |
+| **Build Tools** | Tool + "config" / "plugin" | "webpack config", "vite plugin" |
+| **Node.js Backend** | Function + "express" / "fastify" | "authentication express", "API middleware" |
+
+#### Go
+
+| Function Type | Keyword Strategy | Examples |
+|--------------|------------------|----------|
+| **CLI Tools** | Function + "CLI" + "Go" | "command line tool cobra", "CLI parsing flag" |
+| **Microservices** | Function + "microservice" | "gRPC microservice", "HTTP service gin" |
+| **Concurrency** | Pattern + "goroutine" / "channel" | "worker pool goroutine", "pipeline channel" |
+| **System Tools** | Function + "Go" | "file watcher Go", "process manager" |

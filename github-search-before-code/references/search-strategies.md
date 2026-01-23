@@ -11,7 +11,10 @@ This document provides strategies for effectively searching GitHub and analyzing
    - ❌ Poor: "calculate frequency", "communication protocol"
 
 2. **Combine Keywords**: Core functionality + application scenario
-   - Examples: "FFT embedded", "Modbus RTU C", "PID control motor"
+   - Examples:
+     - C/Embedded: "FFT embedded", "Modbus RTU C", "PID control motor"
+     - Python: "web scraping requests", "pandas data pipeline"
+     - Shell: "backup script rsync", "log rotation cron"
 
 3. **Avoid Overly Specific Project Terminology**
    - ✅ Good: "three-phase power metering"
@@ -45,14 +48,21 @@ This document provides strategies for effectively searching GitHub and analyzing
 
 ### Language Filtering Recommendations
 
-For embedded projects:
-
+**General Strategy**:
 1. **First priority**: No language restriction (leave empty) - get the broadest results
-2. **Second choice**: C language - most suitable for direct embedded porting
-3. **Third choice**: C++ - some algorithms can be referenced and rewritten in C
+2. **Second choice**: Specify target language - get directly usable implementations
+3. **Third choice**: Related languages - may require adaptation but still valuable
 
-For algorithm research:
-- No language restriction - focus on understanding algorithm concepts rather than specific implementation
+**Language-Specific Recommendations**:
+
+| Project Type | Priority 1 | Priority 2 | Priority 3 |
+|--------------|-----------|-----------|-----------|
+| **Embedded/C** | No restriction | C | C++ |
+| **Python** | No restriction | Python | (any - focus on algorithm) |
+| **Shell Scripts** | No restriction | Shell | (any scripting language) |
+| **JavaScript/TS** | No restriction | JavaScript / TypeScript | (both are interchangeable) |
+| **Go** | No restriction | Go | (any - Go patterns are unique) |
+| **Algorithm Research** | No restriction | (skip) | (skip - focus on concept) |
 
 ## Result Analysis and Filtering
 
@@ -80,8 +90,9 @@ Evaluate each result in the following order:
    - No license/Unknown: Use cautiously
 
 5. **Language Match**
-   - C/C++: Most suitable for embedded projects
-   - Python/Java etc.: Need to understand algorithm then rewrite
+   - **Exact match**: Can use directly or with minimal changes
+   - **Similar language**: May require syntax adaptation (e.g., JS → TS, Bash → Zsh)
+   - **Different paradigm**: Focus on algorithm/concept, requires rewrite
 
 ### In-Depth Analysis Process
 
@@ -100,24 +111,25 @@ For filtered candidate repositories (typically top 3-5):
    - Are usage examples provided
    - Is there test code (indicates code quality)
 
-4. **Evaluate Porting Difficulty**
+4. **Evaluate Adaptation Difficulty**
    - Number of dependencies (fewer is better)
    - Proportion of platform-specific code
-   - Lines of code (overly large implementations may not suit small embedded projects)
+   - Lines of code (overly large implementations may be overkill for simple use cases)
+   - Code complexity and learning curve
 
 ### Usability Assessment
 
 Consider "usable" if meeting any of the following conditions:
 
 ✅ **Directly Usable**:
-- Pure C implementation, no external dependencies
-- Concise code (< 500 lines)
-- Provides clear API interface
+- Implementation in target language, minimal dependencies
+- Concise code (< 500 lines for libraries, < 100 for scripts)
+- Provides clear API/interface
 - Has usage examples
 
 ✅ **Requires Minor Modifications**:
-- C++ implementation but clear algorithm
-- Few platform dependencies (like standard library functions)
+- Similar language (e.g., Python 2→3, Bash→Zsh, JS→TS)
+- Few external dependencies (easily installable via package manager)
 - Clear code structure, easy to extract core logic
 
 ⚠️ **Reference Only**:
@@ -145,9 +157,9 @@ Consider "usable" if meeting any of the following conditions:
    - Comply with original license requirements
 
 3. **Adapt Rather Than Copy**
-   - Adapt to project's code style
+   - Adapt to project's code style and conventions
    - Simplify unnecessary features
-   - Optimize memory and performance for embedded environment
+   - Optimize for your specific environment (embedded: memory/performance; scripts: portability; web: bundle size, etc.)
 
 ### Handling Cases Without Suitable Implementation
 

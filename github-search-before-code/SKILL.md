@@ -26,7 +26,10 @@ If unclear, see [industry-background.md](references/industry-background.md) for 
 
 Pattern: `"<function> <domain> <tech>"`
 
-Example: "harmonic analysis" + "power" → `"harmonic analysis power metering" C`
+Examples:
+- C: "harmonic analysis" + "power" → `"harmonic analysis power metering" C`
+- Python: "web scraping" → `"web scraping beautifulsoup" Python`
+- Shell: "backup automation" → `"incremental backup script" Shell`
 
 **Domain matters**: "Goertzel" → audio ❌, "Goertzel power" → power analysis ✅
 
@@ -44,9 +47,9 @@ python3 scripts/github_search.py repo "<keywords>" [language]
 
 ### 4. Analyze & Use
 
-**Screen**: Stars > 20, C/C++, updated < 2yr
+**Screen**: Stars > 20, language matches project, updated < 2yr
 **Read**: WebFetch README for key info
-**Use**: Extract logic, adapt style, add `// Reference: [URL]`
+**Use**: Extract logic, adapt style, add `// Reference: [URL]` (or `# Reference:` for Python/Shell)
 
 **No results**: Try broader keywords or WebSearch
 

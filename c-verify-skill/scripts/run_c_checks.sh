@@ -22,7 +22,7 @@ CONFIG_FILE="$SKILL_DIR/config.json"
 
 # 默认配置
 DEFAULT_CHECKS="bugprone-*,clang-analyzer-*"
-DEFAULT_CPPCHECK_ENABLE="warning,performance,portability"
+DEFAULT_CPPCHECK_ENABLE="warning,performance,portability,style"
 
 # 全局变量
 FILES=()
