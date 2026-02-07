@@ -27,4 +27,6 @@ npx skills add https://github.com/PleasePrompto/notebooklm-skill
 #Superpowers 是一套可组合的“技能”和一些初始指令，用于构建用于编码代理的完整软件开发工作流程，确保代理使用这些技能。
 npx skills add https://github.com/obra/superpowers --skill requesting-code-review
 
+#QMD 查询
+npx skills add  https://github.com/tobi/qmd --skill qmd
 
