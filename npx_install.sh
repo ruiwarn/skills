@@ -28,5 +28,13 @@ npx skills add https://github.com/PleasePrompto/notebooklm-skill
 npx skills add https://github.com/obra/superpowers --skill requesting-code-review
 
 #QMD 查询
+bun install -g https://github.com/ruiwarn/qmd
+qmd collection add /mnt/f/Obsidian --name obsidian
+qmd collection add /mnt/f/Worker/Chip_datasheet --name chip_datasheet
+qmd collection list
+qmd update
+qmd embed
+qmd status
 npx skills add  https://github.com/tobi/qmd --skill qmd
+
 
