@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#查看所有skills
+npx skills list -g
 
 npx skills add https://github.com/ruiwarn/skills
 
@@ -26,6 +28,10 @@ npx skills add https://github.com/PleasePrompto/notebooklm-skill
 
 #Superpowers 是一套可组合的“技能”和一些初始指令，用于构建用于编码代理的完整软件开发工作流程，确保代理使用这些技能。
 npx skills add https://github.com/obra/superpowers --skill requesting-code-review
+
+#嵌入式
+npx skills add https://github.com/jeffallan/claude-skills --skill embedded-systems
+npx skills add https://github.com/ylongw/embedded-review --skill embedded-review
 
 #QMD 查询
 bun install -g https://github.com/ruiwarn/qmd
