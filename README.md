@@ -1,10 +1,44 @@
-#!/bin/bash
+# Skills 仓库
 
-#查看所有skills
+这个仓库存放本地技能和少量辅助脚本。
+
+## 安装
+
+查看可用技能：
+
+```bash
 npx skills list -g
+```
 
+安装整个仓库：
+
+```bash
 npx skills add https://github.com/ruiwarn/skills
+```
 
+只安装指定技能：
+
+```bash
+npx skills add <仓库地址> --skill <技能名>
+```
+
+一次安装多个技能：
+
+```bash
+npx skills add <仓库地址> --skill <技能1> <技能2> <技能3>
+```
+
+## 本仓库示例
+
+```bash
+npx skills add https://github.com/ruiwarn/skills --skill embedded-cross-review
+npx skills add https://github.com/ruiwarn/skills --skill c-verify-skill
+npx skills add https://github.com/ruiwarn/skills --skill github-search-before-code
+```
+
+## 外部示例
+
+```bash
 #算法哲学是通过代码表达的计算美学运动。输出文件有 .md 文件（哲学）、.html 文件（交互式查看器）和 .js 文件（生成算法）。
 npx skills add https://github.com/anthropics/skills --skill algorithmic-art
 
@@ -34,13 +68,27 @@ npx skills add https://github.com/jeffallan/claude-skills --skill embedded-syste
 npx skills add https://github.com/ylongw/embedded-review --skill embedded-cross-review
 npx skills add https://github.com/ruiwarn/skills --skill embedded-cross-review
 
-#QMD 查询
-bun install -g https://github.com/ruiwarn/qmd
-qmd collection add /mnt/f/Obsidian --name obsidian
-qmd collection add /mnt/f/Worker/Chip_datasheet --name chip_datasheet
+```
+
+
+QMD 如需本地资料库，把路径换成你自己的：
+
+```bash
+qmd collection add /path/to/notes --name notes
+qmd collection add /path/to/chip-datasheets --name chip_datasheet
 qmd collection list
 qmd update
 qmd embed
 qmd status
-npx skills add  https://github.com/tobi/qmd --skill qmd
+```
+
+## 同步
+
+仓库附带 [`sync_skills.sh`](./sync_skills.sh)：
+
+```bash
+./sync_skills.sh
+```
+
+如果你的目录结构不同，先改脚本里的目标路径。
 

@@ -20,8 +20,7 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 目标目录列表（方便添加或删除）
 TARGET_DIRS=(
-    "/mnt/c/Users/candy/.claude/skills"
-    "/mnt/c/Users/candy/.codex/skills"
+    "$HOME/.claude/skills"
     "$HOME/.codex/skills"
 )
 

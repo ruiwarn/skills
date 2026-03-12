@@ -2,13 +2,6 @@ Debug/
 Release/
 settings/
 Output/
-
-# 屏蔽 Keil 编译器生成的临时文件和目录
-*.uvgui*
-Listings/
-Objects/
-jlinkLog.txt
-uv4*
 *.log
 cache
 build
@@ -20,6 +13,9 @@ bin
 .cache/
 .ccb_config/
 .sisyphus/
+.claude/
+.env
+.env.*
 __pycache__/
 *.pyc
 .vscode/

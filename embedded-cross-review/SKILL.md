@@ -128,6 +128,8 @@ For small diffs or when cross-review is not requested or not available:
 5. Architecture and maintainability
    - HAL/BSP layering, abstraction, coupling, testability
    - Dead code, magic numbers, configuration management
+   - Check whether newly added code is over-coupled, overly procedural, or mixing responsibilities that could be better expressed with common design patterns
+   - Review whether SOLID-style refactoring or a simpler pattern such as strategy, state, adapter, factory, or dependency inversion would make the design clearer, safer, or easier to extend
 
 6. Embedded security scan
    - Secret storage, debug interfaces, firmware update integrity
@@ -158,6 +160,7 @@ Apply these review areas when relevant:
 - Hardware interfaces and timing
 - RTOS correctness
 - Embedded security
+- Architecture and maintainability, including whether new code should be replaced or reshaped using simpler abstractions, common design patterns, or SOLID principles
 
 Output format for each finding:
 [P0/P1/P2/P3] [file:line] Title
@@ -182,6 +185,7 @@ Focus on:
 3. Race conditions and state machine bugs
 4. Hardware interface misuse, timeout paths, and recovery paths
 5. Security and fault handling weaknesses
+6. Whether the newly added structure is doing too much in one place and would be better modeled with a common pattern or cleaner responsibility split
 
 Output format for each finding:
 [P0/P1/P2/P3] [file:line] Title
@@ -284,6 +288,7 @@ This matters because confidence differs across modes, and the user should know w
 
 ## Architecture Notes
 (layering, testability, portability observations)
+(include whether a common design pattern, SOLID-style split, or simpler abstraction would better fit the new code)
 ```
 
 Only include `Cross-Review Analysis` when two subagents were actually used.
