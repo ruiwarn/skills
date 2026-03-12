@@ -38,7 +38,7 @@ A code review skill for embedded and firmware projects with **two-subagent cross
 ### As Local Skill
 ```bash
 mkdir -p ~/.agents/skills
-git clone https://github.com/ylongwang2782/embedded-review.git ~/.agents/skills/embedded-review
+git clone https://github.com/ylongwang2782/embedded-review.git ~/.agents/skills/embedded-cross-review
 ```
 
 Adjust the destination for your host environment's skill directory if needed.
@@ -57,12 +57,12 @@ Review my current git changes in firmware-pro2
 
 ### Specific commit range
 ```
-/embedded-review ~/Documents/dec/firmware-pro2 HEAD~5..HEAD
+/embedded-cross-review ~/Documents/dec/firmware-pro2 HEAD~5..HEAD
 ```
 
 ### GitHub PR
 ```
-/embedded-review https://github.com/user/repo/pull/42
+/embedded-cross-review https://github.com/user/repo/pull/42
 ```
 
 ## How Cross-Review Works
@@ -101,7 +101,7 @@ Reviewer A  Reviewer B
 ## Structure
 
 ```
-embedded-review/
+embedded-cross-review/
 ├── SKILL.md                          # Main skill (review workflow + subagent orchestration)
 ├── README.md                         # This file
 ├── LICENSE                           # MIT

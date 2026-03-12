@@ -1,5 +1,5 @@
 ---
-name: embedded-review
+name: embedded-cross-review
 description: Use when reviewing embedded or firmware code changes, especially in C/C++, bare-metal, RTOS, driver, ISR, DMA, boot, NFC, or other hardware-facing paths where cross-review by independent agents can catch correctness and safety issues
 ---
 
@@ -27,9 +27,9 @@ Target environments: bare-metal MCU, RTOS (FreeRTOS/Zephyr/ThreadX), Linux embed
 Activate when the user asks to review embedded or firmware code changes. Examples:
 - "review firmware-pro2 的改动"
 - "review the NFC changes"
-- `/embedded-review ~/Documents/dec/firmware-pro2`
-- `/embedded-review ~/Documents/dec/firmware-pro2 HEAD~5..HEAD`
-- `/embedded-review <github-pr-url>`
+- `/embedded-cross-review ~/Documents/dec/firmware-pro2`
+- `/embedded-cross-review ~/Documents/dec/firmware-pro2 HEAD~5..HEAD`
+- `/embedded-cross-review <github-pr-url>`
 
 ## Severity Levels
 

@@ -31,7 +31,8 @@ npx skills add https://github.com/obra/superpowers --skill requesting-code-revie
 
 #嵌入式
 npx skills add https://github.com/jeffallan/claude-skills --skill embedded-systems
-npx skills add https://github.com/ylongw/embedded-review --skill embedded-review
+npx skills add https://github.com/ylongw/embedded-review --skill embedded-cross-review
+npx skills add https://github.com/ruiwarn/skills --skill embedded-cross-review
 
 #QMD 查询
 bun install -g https://github.com/ruiwarn/qmd
@@ -42,5 +43,4 @@ qmd update
 qmd embed
 qmd status
 npx skills add  https://github.com/tobi/qmd --skill qmd
-
 
