@@ -293,20 +293,6 @@ This matters because confidence differs across modes, and the user should know w
 
 Only include `Cross-Review Analysis` when two subagents were actually used.
 
-### Phase 4: Next Steps
-
-```markdown
 ---
-## Next Steps
-
-Found X issues (P0: _, P1: _, P2: _, P3: _).
-
-How would you like to proceed?
-1. Fix all
-2. Fix P0/P1 only
-3. Fix specific items
-4. Re-run with cross-review
-5. No changes
-```
 
 **Important**: Do not implement changes until the user explicitly confirms.
