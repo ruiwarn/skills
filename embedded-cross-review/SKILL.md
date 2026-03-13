@@ -97,11 +97,14 @@ REVIEW_CONTEXT = {
 }
 ```
 
-4. Load only the relevant reference files:
-   - `references/memory-safety.md`
-   - `references/interrupt-safety.md`
-   - `references/hardware-interface.md`
-   - `references/c-pitfalls.md`
+4. Load reference files by trigger, not blindly:
+   - Always load `references/c-pitfalls.md` for C/C++ diffs unless the change is purely documentation or build metadata.
+   - Load `references/memory-safety.md` when the diff touches buffers, parsing, `memcpy`/`memset`, string handling, stack allocation, heap use, DMA buffers, packed structs, pointer casts, or alignment-sensitive code.
+   - Load `references/interrupt-safety.md` when the diff touches ISRs, callbacks from interrupt context, shared state, `volatile`, critical sections, atomics, RTOS tasks/queues/semaphores/mutexes, or any code that can run concurrently.
+   - Load `references/hardware-interface.md` when the diff touches peripheral init, clocking, GPIO mux, MMIO registers, DMA setup, watchdogs, reset/power sequencing, or protocol drivers such as I2C/SPI/UART/NFC.
+   - Architecture/maintainability and embedded security do not have dedicated reference files in this skill; review those directly from the diff and target context.
+   - If the diff spans multiple categories, load every matching reference file.
+   - If the category is unclear, the diff is safety-critical, or a critical path is touched, load all four reference files.
 
 ---
 
@@ -109,29 +112,37 @@ REVIEW_CONTEXT = {
 
 For small diffs or when cross-review is not requested or not available:
 
+Before reviewing, use the Phase 0 trigger rules to decide which reference files to load. Do not assume all four references are required for every small diff, but do load all applicable ones. Architecture/maintainability and embedded security are always reviewed even though this skill currently has no dedicated reference files for them.
+
 1. Memory safety scan
+   - Load `references/memory-safety.md` when the diff matches the memory-safety triggers from Phase 0
    - Stack overflow, buffer overrun, alignment, DMA cache coherence, heap fragmentation
    - Flag `sprintf`, `strcpy`, `gets`, `strcat`; suggest bounded alternatives
 
 2. Interrupt and concurrency correctness
+   - Load `references/interrupt-safety.md` when the diff matches the interrupt/concurrency triggers from Phase 0
    - Shared variable access, critical sections, ISR best practices, RTOS pitfalls
    - Priority inversion, reentrancy, nested interrupt handling
 
 3. Hardware interface review
+   - Load `references/hardware-interface.md` when the diff matches the hardware-interface triggers from Phase 0
    - Peripheral init ordering, register access, timing violations, pin conflicts
    - I2C/SPI/UART/NFC buffer management and timeout handling
 
 4. C/C++ language pitfalls
+   - Load `references/c-pitfalls.md` for any non-trivial C/C++ code review
    - Undefined behavior, integer issues, compiler assumptions, linker issues
    - Preprocessor hazards, portability, type safety
 
 5. Architecture and maintainability
+   - No dedicated reference file today; review this directly from the diff and surrounding design
    - HAL/BSP layering, abstraction, coupling, testability
    - Dead code, magic numbers, configuration management
    - Check whether newly added code is over-coupled, overly procedural, or mixing responsibilities that could be better expressed with common design patterns
    - Review whether SOLID-style refactoring or a simpler pattern such as strategy, state, adapter, factory, or dependency inversion would make the design clearer, safer, or easier to extend
 
 6. Embedded security scan
+   - No dedicated reference file today; review this directly from the diff and threat surface
    - Secret storage, debug interfaces, firmware update integrity
    - Side channels, fault injection, input validation, stack canaries
 
