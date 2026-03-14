@@ -36,7 +36,7 @@ npx skills add https://github.com/ruiwarn/skills --skill c-verify-skill
 npx skills add https://github.com/ruiwarn/skills --skill github-search-before-code
 ```
 
-## 外部示例
+## 外部推荐精品SKill
 
 ```bash
 #算法哲学是通过代码表达的计算美学运动。输出文件有 .md 文件（哲学）、.html 文件（交互式查看器）和 .js 文件（生成算法）。
@@ -67,6 +67,10 @@ npx skills add https://github.com/obra/superpowers --skill requesting-code-revie
 npx skills add https://github.com/jeffallan/claude-skills --skill embedded-systems
 npx skills add https://github.com/ylongw/embedded-review --skill embedded-cross-review
 npx skills add https://github.com/ruiwarn/skills --skill embedded-cross-review
+
+#AI调教
+npx skills add https://github.com/tanweai/pua pua high-agency
+
 
 ```
 
