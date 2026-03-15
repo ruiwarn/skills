@@ -61,7 +61,7 @@ npx skills add https://github.com/anthropics/skills --skill frontend-design
 npx skills add https://github.com/PleasePrompto/notebooklm-skill
 
 #Superpowers 是一套可组合的“技能”和一些初始指令，用于构建用于编码代理的完整软件开发工作流程，确保代理使用这些技能。
-npx skills add https://github.com/obra/superpowers --skill requesting-code-review
+npx skills add https://github.com/obra/superpowers
 
 #嵌入式
 npx skills add https://github.com/jeffallan/claude-skills --skill embedded-systems
@@ -69,7 +69,7 @@ npx skills add https://github.com/ylongw/embedded-review --skill embedded-cross-
 npx skills add https://github.com/ruiwarn/skills --skill embedded-cross-review
 
 #AI调教
-npx skills add https://github.com/tanweai/pua pua high-agency
+npx skills add https://github.com/tanweai/pua
 
 
 ```
