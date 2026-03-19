@@ -10,6 +10,11 @@
 npx skills list -g
 ```
 
+卸载可用技能：
+```bash
+npx skills remove -g
+```
+
 安装整个仓库：
 
 ```bash
@@ -61,7 +66,7 @@ npx skills add https://github.com/anthropics/skills --skill frontend-design
 npx skills add https://github.com/PleasePrompto/notebooklm-skill
 
 #Superpowers 是一套可组合的“技能”和一些初始指令，用于构建用于编码代理的完整软件开发工作流程，确保代理使用这些技能。
-npx skills add https://github.com/obra/superpowers
+npx skills add https://github.com/obra/superpowers --skill execute-plan brainstorm write-plan
 
 #嵌入式
 npx skills add https://github.com/jeffallan/claude-skills --skill embedded-systems

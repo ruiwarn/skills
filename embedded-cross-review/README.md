@@ -9,7 +9,7 @@ A code review skill for embedded and firmware projects with **two-subagent cross
 - **Interrupt & Concurrency** — Volatile correctness, critical sections, ISR best practices, RTOS pitfalls (priority inversion, deadlock)
 - **Hardware Interfaces** — Peripheral init ordering, register access patterns, I2C/SPI/UART/NFC protocol issues, clock & timing
 - **C/C++ Pitfalls** — Undefined behavior, integer gotchas, compiler optimization traps, preprocessor hazards, portability
-- **Architecture** — HAL/BSP layering, testability, configuration management
+- **Architecture** — HAL/BSP layering, state ownership, coupling, testability, and whether direct calls should become observer/callback/event boundaries
 - **Security** — Debug interface exposure, firmware update integrity, side channels, input validation
 
 ### Two-Subagent Cross-Review
@@ -95,7 +95,7 @@ Reviewer A  Reviewer B
 |-------|------|--------|
 | P0 | Critical | Must block merge — memory corruption, security, hardware damage |
 | P1 | High | Fix before merge — race condition, UB, resource leak |
-| P2 | Medium | Fix or follow-up — code smell, portability, missing error handling |
+| P2 | Medium | Fix or follow-up — code smell, portability, missing error handling, excessive coupling |
 | P3 | Low | Optional — style, naming, documentation |
 
 ## Structure
@@ -111,6 +111,7 @@ embedded-cross-review/
     ├── memory-safety.md              # Stack, buffer, alignment, DMA, heap
     ├── interrupt-safety.md           # ISR, volatile, critical sections, RTOS
     ├── hardware-interface.md         # Peripherals, registers, protocols, timing
+    ├── architecture-maintainability.md # Coupling, state ownership, pattern fit
     └── c-pitfalls.md                 # UB, integers, compiler, preprocessor, portability
 ```
 

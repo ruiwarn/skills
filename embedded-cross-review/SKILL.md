@@ -1,6 +1,6 @@
 ---
 name: embedded-cross-review
-description: Use when reviewing embedded or firmware code changes, especially in C/C++, bare-metal, RTOS, driver, ISR, DMA, boot, NFC, or other hardware-facing paths where cross-review by independent agents can catch correctness and safety issues
+description: Use when reviewing embedded or firmware code changes, especially in C/C++, bare-metal, RTOS, driver, ISR, DMA, boot, NFC, or other hardware-facing paths where cross-review can catch correctness, safety, and architecture-coupling issues
 ---
 
 # Embedded Code Review Expert
@@ -37,8 +37,15 @@ Activate when the user asks to review embedded or firmware code changes. Example
 |-------|------|-------------|--------|
 | **P0** | Critical | Memory corruption, interrupt safety violation, security vulnerability, brick risk | Must block merge |
 | **P1** | High | Race condition, resource leak, undefined behavior, RTOS misuse | Should fix before merge |
-| **P2** | Medium | Code smell, portability issue, missing error handling, suboptimal pattern | Fix or create follow-up |
+| **P2** | Medium | Code smell, portability issue, missing error handling, excessive coupling, suboptimal pattern | Fix or create follow-up |
 | **P3** | Low | Style, naming, documentation, minor suggestion | Optional improvement |
+
+### Architecture Finding Rules
+
+- Treat architecture and coupling issues as first-class findings when they affect correctness, safety, sequencing, change amplification, or testability. Do not bury material design problems in a vague closing note.
+- Raise **P1** when coupling creates a real correctness or safety hazard, especially on ISR/task, driver/application, init/recovery, or power/reset paths.
+- Raise **P2** when a module knows concrete consumers it should only notify, mixes unrelated responsibilities, or would clearly benefit from a smaller boundary such as observer, callback registration, event queue, state machine, strategy, adapter, or dependency inversion.
+- Keep it at **P3** only when the issue is local cleanup with low near-term risk.
 
 ---
 
@@ -102,9 +109,10 @@ REVIEW_CONTEXT = {
    - Load `references/memory-safety.md` when the diff touches buffers, parsing, `memcpy`/`memset`, string handling, stack allocation, heap use, DMA buffers, packed structs, pointer casts, or alignment-sensitive code.
    - Load `references/interrupt-safety.md` when the diff touches ISRs, callbacks from interrupt context, shared state, `volatile`, critical sections, atomics, RTOS tasks/queues/semaphores/mutexes, or any code that can run concurrently.
    - Load `references/hardware-interface.md` when the diff touches peripheral init, clocking, GPIO mux, MMIO registers, DMA setup, watchdogs, reset/power sequencing, or protocol drivers such as I2C/SPI/UART/NFC.
-   - Architecture/maintainability and embedded security do not have dedicated reference files in this skill; review those directly from the diff and target context.
+   - Load `references/architecture-maintainability.md` when the diff adds or reshapes module boundaries, cross-layer calls, callback/observer registration, event dispatch, state machines, feature branching, or direct calls that look like notification or fan-out.
+   - Embedded security does not have a dedicated reference file in this skill yet; review it directly from the diff and target context.
    - If the diff spans multiple categories, load every matching reference file.
-   - If the category is unclear, the diff is safety-critical, or a critical path is touched, load all four reference files.
+   - If the category is unclear, the diff is safety-critical, or a critical path is touched, load all five dedicated reference files.
 
 ---
 
@@ -112,7 +120,7 @@ REVIEW_CONTEXT = {
 
 For small diffs or when cross-review is not requested or not available:
 
-Before reviewing, use the Phase 0 trigger rules to decide which reference files to load. Do not assume all four references are required for every small diff, but do load all applicable ones. Architecture/maintainability and embedded security are always reviewed even though this skill currently has no dedicated reference files for them.
+Before reviewing, use the Phase 0 trigger rules to decide which reference files to load. Do not assume every reference file is required for every small diff, but do load all applicable ones. Architecture/maintainability and embedded security are always reviewed; architecture now has a dedicated reference file and embedded security still does not.
 
 1. Memory safety scan
    - Load `references/memory-safety.md` when the diff matches the memory-safety triggers from Phase 0
@@ -135,11 +143,11 @@ Before reviewing, use the Phase 0 trigger rules to decide which reference files 
    - Preprocessor hazards, portability, type safety
 
 5. Architecture and maintainability
-   - No dedicated reference file today; review this directly from the diff and surrounding design
-   - HAL/BSP layering, abstraction, coupling, testability
+   - Load `references/architecture-maintainability.md` when the diff matches the architecture triggers from Phase 0
+   - HAL/BSP layering, abstraction boundaries, coupling, state ownership, testability
    - Dead code, magic numbers, configuration management
-   - Check whether newly added code is over-coupled, overly procedural, or mixing responsibilities that could be better expressed with common design patterns
-   - Review whether SOLID-style refactoring or a simpler pattern such as strategy, state, adapter, factory, or dependency inversion would make the design clearer, safer, or easier to extend
+   - Check whether direct calls are encoding notification, fan-out, optional consumers, or cross-layer reach-through that would be better expressed as observer, callback registration, event queue, state machine, strategy, adapter, or dependency inversion
+   - Treat actionable coupling problems as findings, not just notes; explain the concrete symptom and the smallest embedded-friendly abstraction that would reduce the coupling
 
 6. Embedded security scan
    - No dedicated reference file today; review this directly from the diff and threat surface
@@ -181,7 +189,9 @@ Load and apply the following reference files based on the diff content:
 
 4. **references/hardware-interface.md** — Load when the diff touches: peripheral init, clocking, GPIO mux, MMIO registers, DMA setup, watchdogs, reset/power sequencing, or protocol drivers such as I2C/SPI/UART/NFC. Covers peripheral init ordering, register access, timing violations, pin conflicts, and buffer management.
 
-If the category is unclear, the diff is safety-critical, or a critical path is touched, load all four reference files.
+5. **references/architecture-maintainability.md** — Load when the diff adds or reshapes module boundaries, cross-layer calls, callback/observer registration, event dispatch, state machines, feature branching, or direct calls that look like notification or fan-out. Covers coupling, responsibility split, state ownership, pattern selection, and embedded-friendly alternatives such as static observer lists, callback registration, bounded event queues, interface structs, and explicit state machines.
+
+If the category is unclear, the diff is safety-critical, or a critical path is touched, load all five dedicated reference files.
 
 ## Review Areas
 
@@ -191,7 +201,9 @@ Apply these review areas when relevant:
 - Hardware interfaces and timing
 - RTOS correctness
 - Embedded security
-- Architecture and maintainability, including whether new code should be replaced or reshaped using simpler abstractions, common design patterns, or SOLID principles
+- Architecture and maintainability, including whether new code introduces hardcoded fan-out, cross-layer reach-through, unclear state ownership, or mixed responsibilities that should instead use a smaller boundary such as observer, callback registration, event queue, state machine, strategy, adapter, or dependency inversion
+
+Architecture findings are first-class issues. If the code is materially over-coupled, do not downgrade it to a soft note just because it compiles.
 
 ## Output Format
 
@@ -200,6 +212,8 @@ For each finding:
 - Description
 - Risk
 - Suggested fix
+
+For architecture findings, explicitly name the coupling symptom and the smallest alternative that would reduce it.
 
 Flag uncertain findings with [?].
 ```
@@ -228,7 +242,9 @@ Load and apply the following reference files based on the diff content:
 
 4. **references/hardware-interface.md** — Load when the diff touches: peripheral init, clocking, GPIO mux, MMIO registers, DMA setup, watchdogs, reset/power sequencing, or protocol drivers such as I2C/SPI/UART/NFC. Covers peripheral init ordering, register access, timing violations, pin conflicts, and buffer management.
 
-If the category is unclear, the diff is safety-critical, or a critical path is touched, load all four reference files.
+5. **references/architecture-maintainability.md** — Load when the diff adds or reshapes module boundaries, cross-layer calls, callback/observer registration, event dispatch, state machines, feature branching, or direct calls that look like notification or fan-out. Covers coupling, responsibility split, state ownership, pattern selection, and embedded-friendly alternatives such as static observer lists, callback registration, bounded event queues, interface structs, and explicit state machines.
+
+If the category is unclear, the diff is safety-critical, or a critical path is touched, load all five dedicated reference files.
 
 ## Review Focus
 
@@ -238,7 +254,9 @@ Focus on:
 3. Race conditions and state machine bugs
 4. Hardware interface misuse, timeout paths, and recovery paths
 5. Security and fault handling weaknesses
-6. Whether the newly added structure is doing too much in one place and would be better modeled with a common pattern or cleaner responsibility split
+6. Whether the newly added structure is doing too much in one place, hardcodes concrete consumers, or spreads state ownership in a way that should be modeled with observer, callback registration, event queue, state machine, strategy, adapter, or dependency inversion
+
+Do not avoid architecture findings just because the code is functional today. If direct calls create unnecessary coupling or force future edits in the wrong module, report it.
 
 ## Output Format
 
@@ -342,8 +360,8 @@ This matters because confidence differs across modes, and the user should know w
 (register access, peripheral init, timing-sensitive code)
 
 ## Architecture Notes
-(layering, testability, portability observations)
-(include whether a common design pattern, SOLID-style split, or simpler abstraction would better fit the new code)
+(layering, testability, portability observations that did not rise to P1/P2)
+(actionable coupling, responsibility split, or pattern-fit problems belong in Findings, not only here)
 ```
 
 Only include `Cross-Review Analysis` when two subagents were actually used.
