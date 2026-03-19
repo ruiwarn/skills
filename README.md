@@ -76,6 +76,8 @@ npx skills add https://github.com/obra/superpowers --skill execute-plan brainsto
 npx skills add https://github.com/jeffallan/claude-skills --skill embedded-systems
 npx skills add https://github.com/ylongw/embedded-review --skill embedded-cross-review
 npx skills add https://github.com/ruiwarn/skills --skill embedded-cross-review
+npx skills add https://github.com/supercent-io/skills-template --skill code-refactoring
+npx skills add https://github.com/sickn33/antigravity-awesome-skills --skill code-refactoring-refactor-clean
 
 #AI调教
 npx skills add https://github.com/tanweai/pua
