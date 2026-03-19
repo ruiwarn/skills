@@ -44,6 +44,10 @@ npx skills add https://github.com/ruiwarn/skills --skill github-search-before-co
 ## 外部推荐精品SKill
 
 ```bash
+#skill基本能力
+npx skills add https://github.com/vercel-labs/skills --skill find-skills
+npx skills add https://github.com/anthropics/skills --skill skill-creator
+
 #算法哲学是通过代码表达的计算美学运动。输出文件有 .md 文件（哲学）、.html 文件（交互式查看器）和 .js 文件（生成算法）。
 npx skills add https://github.com/anthropics/skills --skill algorithmic-art
 
@@ -66,7 +70,7 @@ npx skills add https://github.com/anthropics/skills --skill frontend-design
 npx skills add https://github.com/PleasePrompto/notebooklm-skill
 
 #Superpowers 是一套可组合的“技能”和一些初始指令，用于构建用于编码代理的完整软件开发工作流程，确保代理使用这些技能。
-npx skills add https://github.com/obra/superpowers --skill execute-plan brainstorm write-plan
+npx skills add https://github.com/obra/superpowers --skill execute-plan brainstorming write-plan
 
 #嵌入式
 npx skills add https://github.com/jeffallan/claude-skills --skill embedded-systems
