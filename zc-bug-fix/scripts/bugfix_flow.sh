@@ -54,10 +54,27 @@ create_mr() {
     fi
 }
 
+contains_gitlab_issue_link() {
+    local comment="${1:-}"
+    printf '%s' "$comment" | grep -Eq 'https?://[^[:space:]]+/-/issues/[0-9]+'
+}
+
+contains_gitlab_mr_link() {
+    local comment="${1:-}"
+    printf '%s' "$comment" | grep -Eq 'https?://[^[:space:]]+/-/merge_requests/[0-9]+'
+}
+
 zentao_confirm() {
     local bug_id="$1"
-    local comment="$2"
+    local comment="${2:-}"
     [[ -n "$bug_id" ]] || { echo "错误: 用法 zentao-confirm <bug_id> [comment]" >&2; exit 1; }
+
+    # 回写禅道前强制要求附带 GitLab issue 链接，避免跳过 issue 直接 confirm。
+    if ! contains_gitlab_issue_link "$comment"; then
+        echo "错误: 确认评论中必须包含 GitLab issue 链接。请先创建 issue 再回写禅道。" >&2
+        exit 1
+    fi
+
     "$ZENTAO_SCRIPT" confirm "$bug_id" "$comment"
 }
 
@@ -70,10 +87,17 @@ zentao_set_browser_type() {
 
 zentao_resolve() {
     local bug_id="$1"
-    local comment="$2"
-    local assigned_to="$3"
-    local bug_type="$4"
+    local comment="${2:-}"
+    local assigned_to="${3:-}"
+    local bug_type="${4:-}"
     [[ -n "$bug_id" ]] || { echo "错误: 用法 zentao-resolve <bug_id> [comment] [assigned_to] [bug_type]" >&2; exit 1; }
+
+    # resolve 前必须拿到 MR 链接，确保禅道回写发生在代码和评审链路完成之后。
+    if ! contains_gitlab_mr_link "$comment"; then
+        echo "错误: 解决评论中必须包含 GitLab MR 链接。请先创建 MR 再回写禅道。" >&2
+        exit 1
+    fi
+
     "$ZENTAO_SCRIPT" resolve "$bug_id" fixed "$comment" "$assigned_to" "$bug_type"
 }
 
@@ -108,6 +132,8 @@ bug-fix 主控脚本
   3. 本脚本只做编排，不替代人工确认
   4. zentao-resolve 默认转派给 .config 中的 PROJECT_OWNER
   5. bug_type 传中文分类名，脚本内部会自动映射到禅道 browser 字段
+  6. zentao-confirm 评论里必须带 GitLab issue 链接
+  7. zentao-resolve 评论里必须带 GitLab MR 链接
 EOF
 }
 

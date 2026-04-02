@@ -72,9 +72,9 @@ Do not continue with API actions until config is valid.
 
 ```bash
 .claude/skills/zc-bug-fix/scripts/zentao.sh get <bug_id>
-.claude/skills/zc-bug-fix/scripts/zentao.sh confirm <bug_id> [comment]
-.claude/skills/zc-bug-fix/scripts/zentao.sh resolve <bug_id> [resolution] [comment] [assigned_to]
-
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh zentao-confirm <bug_id> [comment]
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh zentao-resolve <bug_id> [comment] [assigned_to] [bug_type]
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh zentao-set-browser-type <bug_id> <bug_type>
 .claude/skills/zc-bug-fix/scripts/gitlab.sh issue create <title> <description_file> [labels]
 .claude/skills/zc-bug-fix/scripts/gitlab.sh issue get <iid>
 .claude/skills/zc-bug-fix/scripts/gitlab.sh mr create <source_branch> <title> <description_file> [target_branch]
@@ -205,10 +205,21 @@ MR 描述至少包含：
 
 ### 7. 回写禅道
 
+**前置条件（全部满足才能执行本步骤）：**
+- ✅ 步骤 3 验证已通过
+- ✅ 步骤 5 代码已 commit 并 push 到远程
+- ✅ 步骤 6 MR 已创建且链接可访问
+- ✅ 先执行 `zentao.sh get <bug_id>` 检查 bug 当前状态
+
+**操作前必须先检查状态：**
+- 如果 bug 已经是 `confirmed` 状态则跳过 confirm
+- 如果 bug 已经是 `resolved` 或 `closed` 状态则跳过 resolve
+- 如果禅道 API 返回错误，不要立即重试，先 `get` 查看状态，确认不是重复操作后再决定是否继续
+
 ```bash
-.claude/skills/zc-bug-fix/scripts/zentao.sh confirm <bug_id> "附 issue 链接的说明"
-.claude/skills/zc-bug-fix/scripts/zentao.sh set-browser-type <bug_id> "设计_边界值设计问题"
-.claude/skills/zc-bug-fix/scripts/zentao.sh resolve <bug_id> fixed "附 MR 链接的说明" "" "设计_边界值设计问题"
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh zentao-confirm <bug_id> "已创建 GitLab issue: http://172.17.0.100:8080/<group>/<project>/-/issues/42"
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh zentao-set-browser-type <bug_id> "设计_边界值设计问题"
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh zentao-resolve <bug_id> "已创建 GitLab MR: http://172.17.0.100:8080/<group>/<project>/-/merge_requests/9" "" "设计_边界值设计问题"
 ```
 
 说明：
@@ -226,3 +237,5 @@ MR 描述至少包含：
 4. issue / MR 长描述必须走文件，不要直接拼命令行字符串
 5. 只提交与当前 bug 相关的改动
 6. 禅道回写内容要带 GitLab issue / MR 链接
+7. 禅道回写是整个工作流的**最后一步**。没有 commit + push + MR，就不要操作禅道
+8. 禅道操作前必须先 `get` 检查当前状态；已确认或已解决的 bug 禁止重复操作；API 报错时先查状态再决定是否重试
