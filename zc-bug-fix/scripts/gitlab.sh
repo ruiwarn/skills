@@ -2,11 +2,14 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG_FILE="${SCRIPT_DIR}/../.config"
 CHECK_SCRIPT="${SCRIPT_DIR}/check_config.sh"
 JSON_PAYLOAD_SCRIPT="${SCRIPT_DIR}/json_payload.py"
 
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/config_paths.sh"
+
 "$CHECK_SCRIPT" >/dev/null
+CONFIG_FILE="$(zc_bug_fix_get_effective_config_path)"
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
 

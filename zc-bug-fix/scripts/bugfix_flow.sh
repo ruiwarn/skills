@@ -5,7 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHECK_SCRIPT="${SCRIPT_DIR}/check_config.sh"
 ZENTAO_SCRIPT="${SCRIPT_DIR}/zentao.sh"
 GITLAB_SCRIPT="${SCRIPT_DIR}/gitlab.sh"
-CONFIG_FILE="${SCRIPT_DIR}/../.config"
+
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/config_paths.sh"
 
 run_check() {
     "$CHECK_SCRIPT"
@@ -102,13 +104,19 @@ zentao_resolve() {
 }
 
 print_config_hint() {
-    # 统一展示实际 skill 目录，避免用户按照历史名称 bug-fix 初始化配置。
+    local preferred_config
+    local example_file
+
+    preferred_config="$(zc_bug_fix_get_preferred_config_path)"
+    example_file="$(zc_bug_fix_get_example_path)"
+
+    # 统一提示项目级配置路径，避免安装 skill 时覆盖真实业务配置。
     cat <<EOF
 配置文件:
-  ${CONFIG_FILE}
+  ${preferred_config}
 
 初始化方式:
-  cp .claude/skills/zc-bug-fix/.config.example .claude/skills/zc-bug-fix/.config
+  cp ${example_file} ${preferred_config}
 EOF
 }
 
@@ -130,7 +138,7 @@ bug-fix 主控脚本
   1. 先执行 check-config
   2. issue / mr 描述必须先写入 markdown 文件
   3. 本脚本只做编排，不替代人工确认
-  4. zentao-resolve 默认转派给 .config 中的 PROJECT_OWNER
+  4. zentao-resolve 默认转派给 zc-bug-fix.config 中的 PROJECT_OWNER
   5. bug_type 传中文分类名，脚本内部会自动映射到禅道 browser 字段
   6. zentao-confirm 评论里必须带 GitLab issue 链接
   7. zentao-resolve 评论里必须带 GitLab MR 链接

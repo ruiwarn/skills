@@ -1,6 +1,6 @@
 # Bug Fix Skill Configuration
-# 复制本文件为 .config 后填写你自己的账号信息
-# .config 已被 .gitignore 忽略，不会提交
+# 复制本文件到项目根目录并重命名为 zc-bug-fix.config
+# zc-bug-fix.config 已被 .gitignore 忽略，不会提交
 
 # 禅道配置
 ZENTAO_URL=http://172.17.0.100:9191/zentao

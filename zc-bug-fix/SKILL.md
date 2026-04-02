@@ -26,26 +26,31 @@ First run:
 If config is missing or incomplete, stop immediately and tell the user to create:
 
 ```bash
-.claude/skills/zc-bug-fix/.config
+./zc-bug-fix.config
 ```
 
 They can start from:
 
 ```bash
-cp .claude/skills/zc-bug-fix/.config.example .claude/skills/zc-bug-fix/.config
+cp .claude/skills/zc-bug-fix/zc-bug-fix.config.example ./zc-bug-fix.config
 ```
 
 Do not continue with API actions until config is valid.
+
+说明：
+- 默认读取当前项目根目录 `zc-bug-fix.config`
+- `ZC_BUG_FIX_CONFIG` 可覆盖默认路径；传相对路径时，按当前项目根目录解析
 
 ## Files in this skill
 
 ```text
 .claude/skills/zc-bug-fix/
 ├── SKILL.md
-├── .config.example
+├── zc-bug-fix.config.example
 ├── scripts/
 │   ├── bugfix_flow.sh
 │   ├── check_config.sh
+│   ├── config_paths.sh
 │   ├── zentao.sh
 │   └── gitlab.sh
 └── templates/
@@ -86,7 +91,7 @@ Important:
 - 6D issue 和 MR 描述先写文件，再调用脚本
 - issue 优先参考 `templates/issue_6d_template.md`
 - MR 优先参考 `templates/mr_template.md`
-- `.config` 中必须配置 `PROJECT_OWNER`，用于 bug 解决后自动转派项目负责人
+- `zc-bug-fix.config` 中必须配置 `PROJECT_OWNER`，用于 bug 解决后自动转派项目负责人
 
 ## Standard workflow
 
@@ -223,7 +228,7 @@ MR 描述至少包含：
 ```
 
 说明：
-- `resolve` 默认会把 Bug 转派给 `.config` 中的 `PROJECT_OWNER`
+- `resolve` 默认会把 Bug 转派给 `zc-bug-fix.config` 中的 `PROJECT_OWNER`
 - 如需临时覆盖负责人，可追加第四个参数 `assigned_to`
 - 第五个参数 `bug_type` 传 AI 判断出的中文分类名，脚本会自动映射到禅道 `browser` 字段；命中黑名单会直接拒绝提交
 - `set-browser-type` 可单独补写 bug 分类
@@ -231,7 +236,7 @@ MR 描述至少包含：
 
 ## Hard rules
 
-1. 没有有效 `.config`，不要继续 API 操作
+1. 没有有效 `zc-bug-fix.config`，不要继续 API 操作
 2. 没有用户确认，不要创建分支、推送、MR
 3. 没有验证通过，不要说“已完成”
 4. issue / MR 长描述必须走文件，不要直接拼命令行字符串

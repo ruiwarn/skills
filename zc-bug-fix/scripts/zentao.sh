@@ -2,9 +2,11 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG_FILE="${SCRIPT_DIR}/../.config"
 CHECK_SCRIPT="${SCRIPT_DIR}/check_config.sh"
 COOKIE_FILE="/tmp/zentao_cookies_$$.txt"
+
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/config_paths.sh"
 
 cleanup() {
     rm -f "$COOKIE_FILE"
@@ -12,6 +14,7 @@ cleanup() {
 trap cleanup EXIT
 
 "$CHECK_SCRIPT" >/dev/null
+CONFIG_FILE="$(zc_bug_fix_get_effective_config_path)"
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
 
@@ -32,7 +35,7 @@ fetch_bug_json() {
     curl -sS -b "$COOKIE_FILE" "${ZENTAO_URL}/bug-view-${bug_id}.json"
 }
 
-# 使用 Python 解析禅道 JSON，兼容 data 为对象或 JSON 字符串两种返回格式。
+# 使用 Python 解析禅道 JSON，同时处理 data 为对象或 JSON 字符串两种返回格式。
 extract_bug_field() {
     local field="$1"
 
@@ -258,7 +261,7 @@ usage() {
   $0 resolve <bug_id> [resolution] [comment] [assigned_to] [bug_type]
 
 说明:
-  resolve 默认会在解决后转派给 .config 中的 PROJECT_OWNER
+  resolve 默认会在解决后转派给 zc-bug-fix.config 中的 PROJECT_OWNER
   set-browser-type / resolve 只允许提交白名单中的明确 bug 类型
   黑名单禁止项：继承或历史遗留、未明确定位、非问题、空值
 EOF

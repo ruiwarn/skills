@@ -1,15 +1,19 @@
 #!/bin/bash
 set -e
 
-CONFIG_FILE="$(dirname "$0")/../.config"
-EXAMPLE_FILE="$(dirname "$0")/../.config.example"
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "$0")" && pwd)/config_paths.sh"
+
+CONFIG_FILE="$(zc_bug_fix_get_effective_config_path)" || true
+PREFERRED_CONFIG_FILE="$(zc_bug_fix_get_preferred_config_path)"
+EXAMPLE_FILE="$(zc_bug_fix_get_example_path)"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "MISSING_CONFIG"
-    # 统一提示实际安装目录，避免用户按旧目录初始化配置。
-    echo "请先创建配置文件: .claude/skills/zc-bug-fix/.config"
+    # 缺少配置时统一提示项目级路径，避免继续把敏感信息写回 skill 安装目录。
+    echo "请先创建配置文件: ${PREFERRED_CONFIG_FILE}"
     echo "可直接复制示例文件:"
-    echo "cp .claude/skills/zc-bug-fix/.config.example .claude/skills/zc-bug-fix/.config"
+    echo "cp ${EXAMPLE_FILE} ${PREFERRED_CONFIG_FILE}"
     echo
     echo "示例内容:"
     cat "$EXAMPLE_FILE"
