@@ -20,19 +20,19 @@ It is for cases where the user wants some or all of these steps:
 First run:
 
 ```bash
-.claude/skills/bug-fix/scripts/check_config.sh
+.claude/skills/zc-bug-fix/scripts/check_config.sh
 ```
 
 If config is missing or incomplete, stop immediately and tell the user to create:
 
 ```bash
-.claude/skills/bug-fix/.config
+.claude/skills/zc-bug-fix/.config
 ```
 
 They can start from:
 
 ```bash
-cp .claude/skills/bug-fix/.config.example .claude/skills/bug-fix/.config
+cp .claude/skills/zc-bug-fix/.config.example .claude/skills/zc-bug-fix/.config
 ```
 
 Do not continue with API actions until config is valid.
@@ -40,7 +40,7 @@ Do not continue with API actions until config is valid.
 ## Files in this skill
 
 ```text
-.claude/skills/bug-fix/
+.claude/skills/zc-bug-fix/
 ├── SKILL.md
 ├── .config.example
 ├── scripts/
@@ -60,24 +60,24 @@ Do not continue with API actions until config is valid.
 优先使用主控脚本，减少模型自己拼步骤的机会：
 
 ```bash
-.claude/skills/bug-fix/scripts/bugfix_flow.sh check-config
-.claude/skills/bug-fix/scripts/bugfix_flow.sh fetch <bug_id>
-.claude/skills/bug-fix/scripts/bugfix_flow.sh create-issue <bug_id> <description_file> [labels]
-.claude/skills/bug-fix/scripts/bugfix_flow.sh create-mr <bug_id> <source_branch> <description_file> [target_branch]
-.claude/skills/bug-fix/scripts/bugfix_flow.sh zentao-confirm <bug_id> [comment]
-.claude/skills/bug-fix/scripts/bugfix_flow.sh zentao-resolve <bug_id> [comment] [assigned_to]
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh check-config
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh fetch <bug_id>
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh create-issue <bug_id> <description_file> [labels]
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh create-mr <bug_id> <source_branch> <description_file> [target_branch]
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh zentao-confirm <bug_id> [comment]
+.claude/skills/zc-bug-fix/scripts/bugfix_flow.sh zentao-resolve <bug_id> [comment] [assigned_to]
 ```
 
 ### 底层脚本
 
 ```bash
-.claude/skills/bug-fix/scripts/zentao.sh get <bug_id>
-.claude/skills/bug-fix/scripts/zentao.sh confirm <bug_id> [comment]
-.claude/skills/bug-fix/scripts/zentao.sh resolve <bug_id> [resolution] [comment] [assigned_to]
+.claude/skills/zc-bug-fix/scripts/zentao.sh get <bug_id>
+.claude/skills/zc-bug-fix/scripts/zentao.sh confirm <bug_id> [comment]
+.claude/skills/zc-bug-fix/scripts/zentao.sh resolve <bug_id> [resolution] [comment] [assigned_to]
 
-.claude/skills/bug-fix/scripts/gitlab.sh issue create <title> <description_file> [labels]
-.claude/skills/bug-fix/scripts/gitlab.sh issue get <iid>
-.claude/skills/bug-fix/scripts/gitlab.sh mr create <source_branch> <title> <description_file> [target_branch]
+.claude/skills/zc-bug-fix/scripts/gitlab.sh issue create <title> <description_file> [labels]
+.claude/skills/zc-bug-fix/scripts/gitlab.sh issue get <iid>
+.claude/skills/zc-bug-fix/scripts/gitlab.sh mr create <source_branch> <title> <description_file> [target_branch]
 ```
 
 Important:
@@ -95,7 +95,7 @@ Important:
 优先用脚本读取禅道：
 
 ```bash
-.claude/skills/bug-fix/scripts/zentao.sh get 5245
+.claude/skills/zc-bug-fix/scripts/zentao.sh get 5245
 ```
 
 需要提取这些信息：
@@ -158,7 +158,7 @@ Issue 内容使用 6D 风格，优先按 `templates/issue_6d_template.md` 填写
 先把内容写到 markdown 文件，再创建：
 
 ```bash
-.claude/skills/bug-fix/scripts/gitlab.sh issue create \
+.claude/skills/zc-bug-fix/scripts/gitlab.sh issue create \
   "Bug #5245: 标题" \
   /tmp/issue_5245.md \
   "bug,645协议,拓扑识别"
@@ -188,7 +188,7 @@ git push -u origin bugfix/<bug_id>-short-desc
 同样先把 MR 描述写入 markdown 文件，再创建：
 
 ```bash
-.claude/skills/bug-fix/scripts/gitlab.sh mr create \
+.claude/skills/zc-bug-fix/scripts/gitlab.sh mr create \
   "bugfix/5245-short-desc" \
   "Bugfix #5245: 标题" \
   /tmp/mr_5245.md \
@@ -206,9 +206,9 @@ MR 描述至少包含：
 ### 7. 回写禅道
 
 ```bash
-.claude/skills/bug-fix/scripts/zentao.sh confirm <bug_id> "附 issue 链接的说明"
-.claude/skills/bug-fix/scripts/zentao.sh set-browser-type <bug_id> "设计_边界值设计问题"
-.claude/skills/bug-fix/scripts/zentao.sh resolve <bug_id> fixed "附 MR 链接的说明" "" "设计_边界值设计问题"
+.claude/skills/zc-bug-fix/scripts/zentao.sh confirm <bug_id> "附 issue 链接的说明"
+.claude/skills/zc-bug-fix/scripts/zentao.sh set-browser-type <bug_id> "设计_边界值设计问题"
+.claude/skills/zc-bug-fix/scripts/zentao.sh resolve <bug_id> fixed "附 MR 链接的说明" "" "设计_边界值设计问题"
 ```
 
 说明：

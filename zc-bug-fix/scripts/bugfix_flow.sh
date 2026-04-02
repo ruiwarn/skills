@@ -78,12 +78,13 @@ zentao_resolve() {
 }
 
 print_config_hint() {
+    # 统一展示实际 skill 目录，避免用户按照历史名称 bug-fix 初始化配置。
     cat <<EOF
 配置文件:
   ${CONFIG_FILE}
 
 初始化方式:
-  cp .claude/skills/bug-fix/.config.example .claude/skills/bug-fix/.config
+  cp .claude/skills/zc-bug-fix/.config.example .claude/skills/zc-bug-fix/.config
 EOF
 }
 

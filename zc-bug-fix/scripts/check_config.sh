@@ -6,9 +6,10 @@ EXAMPLE_FILE="$(dirname "$0")/../.config.example"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "MISSING_CONFIG"
-    echo "请先创建配置文件: .claude/skills/bug-fix/.config"
+    # 统一提示实际安装目录，避免用户按旧目录初始化配置。
+    echo "请先创建配置文件: .claude/skills/zc-bug-fix/.config"
     echo "可直接复制示例文件:"
-    echo "cp .claude/skills/bug-fix/.config.example .claude/skills/bug-fix/.config"
+    echo "cp .claude/skills/zc-bug-fix/.config.example .claude/skills/zc-bug-fix/.config"
     echo
     echo "示例内容:"
     cat "$EXAMPLE_FILE"
