@@ -1,0 +1,19 @@
+# Bug Fix Skill Configuration
+# 复制本文件为 .config 后填写你自己的账号信息
+# .config 已被 .gitignore 忽略，不会提交
+
+# 禅道配置
+ZENTAO_URL=http://172.17.0.100:9191/zentao
+ZENTAO_ACCOUNT=your_account
+ZENTAO_PASSWORD=your_password
+
+# GitLab配置
+GITLAB_URL=http://172.17.0.100:8080
+GITLAB_TOKEN=your_token
+GITLAB_PROJECT_ID=553
+
+# MR目标分支，默认 develop
+TARGET_BRANCH=develop
+
+# 项目负责人（禅道用户ID，用于 bug 解决后自动转派）
+PROJECT_OWNER=your_project_owner_account
