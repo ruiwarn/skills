@@ -228,6 +228,7 @@ MR 描述至少包含：
 ```
 
 说明：
+- `zentao-confirm` / `zentao-resolve` 会自动把评论里的 GitLab issue / MR URL 转成禅道可点击链接
 - `resolve` 默认会把 Bug 转派给 `zc-bug-fix.config` 中的 `PROJECT_OWNER`
 - 如需临时覆盖负责人，可追加第四个参数 `assigned_to`
 - 第五个参数 `bug_type` 传 AI 判断出的中文分类名，脚本会自动映射到禅道 `browser` 字段；命中黑名单会直接拒绝提交

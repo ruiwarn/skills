@@ -66,6 +66,39 @@ contains_gitlab_mr_link() {
     printf '%s' "$comment" | grep -Eq 'https?://[^[:space:]]+/-/merge_requests/[0-9]+'
 }
 
+# 将 GitLab issue / MR URL 包装成禅道备注里的可点击 HTML 链接。
+format_zentao_clickable_links() {
+    local comment="${1:-}"
+
+    python3 - "$comment" <<'PY'
+import re
+import sys
+
+comment = sys.argv[1]
+
+# 已经是 HTML 链接时直接透传，避免重复包裹后破坏原始格式。
+if "<a " in comment.lower():
+    print(comment)
+    raise SystemExit(0)
+
+pattern = re.compile(r'https?://[^\s<>"\']+/-/(?P<kind>issues|merge_requests)/(?P<iid>\d+)')
+
+def replace_link(match):
+    url = match.group(0)
+    kind = match.group("kind")
+    iid = match.group("iid")
+
+    if kind == "issues":
+        label = f"Issue #{iid}"
+    else:
+        label = f"MR !{iid}"
+
+    return f'<a href="{url}">{label}</a>'
+
+print(pattern.sub(replace_link, comment))
+PY
+}
+
 zentao_confirm() {
     local bug_id="$1"
     local comment="${2:-}"
@@ -77,6 +110,8 @@ zentao_confirm() {
         exit 1
     fi
 
+    # 统一在回写前把 GitLab URL 包装为可点击链接，方便在禅道界面直接打开。
+    comment="$(format_zentao_clickable_links "$comment")"
     "$ZENTAO_SCRIPT" confirm "$bug_id" "$comment"
 }
 
@@ -100,6 +135,8 @@ zentao_resolve() {
         exit 1
     fi
 
+    # resolve 评论同样转成可点击链接，减少测试/研发二次复制 URL。
+    comment="$(format_zentao_clickable_links "$comment")"
     "$ZENTAO_SCRIPT" resolve "$bug_id" fixed "$comment" "$assigned_to" "$bug_type"
 }
 
