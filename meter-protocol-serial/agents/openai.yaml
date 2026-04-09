@@ -1,0 +1,70 @@
+# OpenAI Agents SDK 配置（可选）
+# 用于支持 OpenAI Agents SDK 的函数调用模式
+
+name: meter_protocol_serial
+description: |
+  698/645 电表协议串口发帧与解析工具。
+  支持组帧、发送、接收、解析和断言验证。
+  用于修bug后的快速回归验证。
+
+functions:
+  build_frame:
+    description: 构建协议请求帧（只组帧，不发送）
+    parameters:
+      proto:
+        type: string
+        enum: ["645", "698"]
+        description: 协议类型
+      op:
+        type: string
+        enum: ["read", "write", "set"]
+        description: 操作类型
+      di:
+        type: string
+        description: 645数据标识（8位十六进制，645协议必填）
+      oad:
+        type: string
+        description: 698对象属性描述符（8位十六进制，698协议必填）
+      value:
+        type: string
+        description: 写操作的值（带类型前缀，如 hex:0102, bool:true）
+      addr:
+        type: string
+        description: 645表地址（12位BCD，可选，默认000000000000）
+      server_addr:
+        type: string
+        description: 698服务器地址（可选）
+      client_addr:
+        type: string
+        description: 698客户机地址（可选，默认00）
+
+  send_frame:
+    description: 发送请求帧并接收响应
+    parameters:
+      port:
+        type: string
+        description: 串口设备路径，如 /dev/ttyUSB0 或 COM3
+      proto:
+        type: string
+        enum: ["645", "698"]
+      op:
+        type: string
+        enum: ["read", "write", "set"]
+      di:
+        type: string
+      oad:
+        type: string
+      value:
+        type: string
+      baud:
+        type: integer
+        description: 波特率（645默认2400，698默认9600）
+      timeout_ms:
+        type: integer
+        description: 超时时间（毫秒，默认2000）
+      expect:
+        type: string
+        description: 断言条件（ack / hex:... / bool:... / int:...）
+      decode_hint:
+        type: string
+        enum: ["hex", "ascii", "uint16_le", "uint32_le", "uint16_be", "uint32_be", "bcd"]
