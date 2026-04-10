@@ -104,8 +104,7 @@ class ZentaoClient:
         req = urllib.request.Request(url, data=data, method="POST")
         resp = self.opener.open(req)
         body = json.loads(resp.read().decode())
-        if '"status":"success"' not in json.dumps(body):
-            # 兼容多种返回格式
+        if not isinstance(body, dict) or body.get("status") != "success":
             raise RuntimeError(f"禅道登录失败: {body}")
 
     def fetch_bug_json(self, bug_id: str) -> dict:

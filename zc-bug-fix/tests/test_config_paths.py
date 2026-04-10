@@ -312,6 +312,32 @@ class TestZentaoBlacklistedTypes:
         )
 
 
+class TestZentaoLogin:
+    """Zentao login should accept structured success responses."""
+
+    def test_login_accepts_success_payload(self):
+        client = zentao.ZentaoClient({
+            "ZENTAO_URL": "http://zentao.example",
+            "ZENTAO_ACCOUNT": "tester",
+            "ZENTAO_PASSWORD": "secret",
+        })
+
+        class FakeResponse:
+            def read(self):
+                return (
+                    b'{"status":"success","user":{"account":"wangrui"},'
+                    b'"token":"demo-token"}'
+                )
+
+        class FakeOpener:
+            def open(self, request):
+                return FakeResponse()
+
+        client.opener = FakeOpener()
+
+        client.login()
+
+
 class TestFormatClickableLinks:
     """format_zentao_clickable_links wraps bare URLs in HTML anchors."""
 
