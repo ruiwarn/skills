@@ -195,6 +195,7 @@ update_bug_browser_type() {
     local bug_type="$2"
     local browser_code
     local response
+    local bug_json
 
     [[ -n "$bug_id" ]] || { echo "错误: 用法 set-browser-type <bug_id> <bug_type>" >&2; exit 1; }
     [[ -n "$bug_type" ]] || { echo "错误: bug_type 不能为空" >&2; exit 1; }
@@ -211,9 +212,61 @@ update_bug_browser_type() {
     fi
 
     login
-    # 分类补写失败时必须立即中断，避免出现“已解决但分类未更新”的半成功状态。
+
+    # 先获取 bug 当前完整数据，再携带关键字段一起提交，
+    # 防止禅道 bug-edit API 因缺少必填字段而清空其他内容。
+    bug_json="$(fetch_bug_json "$bug_id")"
+
+    local form_data
+    form_data=$(python3 -c '
+import json
+import sys
+import urllib.parse
+
+browser_code = sys.argv[1]
+raw = sys.stdin.read().strip()
+
+try:
+    payload = json.loads(raw)
+except Exception:
+    payload = {}
+
+bug = None
+if isinstance(payload, dict):
+    if isinstance(payload.get("bug"), dict):
+        bug = payload["bug"]
+    else:
+        data = payload.get("data")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                data = {}
+        if isinstance(data, dict):
+            bug = data.get("bug", data)
+
+if not isinstance(bug, dict):
+    bug = {}
+
+# 携带关键字段防止禅道 bug-edit API 清空其他字段
+fields = {
+    "title": bug.get("title", ""),
+    "severity": bug.get("severity", "3"),
+    "pri": bug.get("pri", "3"),
+    "type": bug.get("type", "codeerror"),
+    "browser": browser_code,
+}
+
+parts = []
+for k, v in fields.items():
+    if v is not None:
+        parts.append(f"{urllib.parse.quote(str(k))}={urllib.parse.quote(str(v))}")
+
+print("&".join(parts))
+' "$browser_code" <<< "$bug_json")
+
     response=$(curl -sS -b "$COOKIE_FILE" -X POST "${ZENTAO_URL}/bug-edit-${bug_id}.json" \
-        --data-urlencode "browser=${browser_code}"
+        -d "$form_data"
     )
     ensure_api_response_ok "set-browser-type" "$bug_id" "$response"
     printf '%s\n' "$response"

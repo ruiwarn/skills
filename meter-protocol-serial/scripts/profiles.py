@@ -36,8 +36,8 @@ class Profile645:
 @dataclass
 class Profile698:
     """DL/T698.45 协议默认配置"""
-    # 服务器地址(逻辑地址+物理地址)
-    default_server_addr: str = "000000000000"
+    # 服务器地址(逻辑地址+物理地址) - 全AA通配地址
+    default_server_addr: str = "AAAAAAAAAAAA"
     # 客户机地址
     default_client_addr: str = "00"
     # 客户机地址(CA)缩写形式
