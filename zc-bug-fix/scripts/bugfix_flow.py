@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""bug-fix 主控脚本（严格顺序执行）- Python 版本
+"""bug-fix 主控脚本（严格顺序执行）- Python 版本。
 
-Replaces bugfix_flow.sh. Orchestrates the full bug-fix workflow:
-  check-config → fetch → create-branch → push → create-issue →
-  create-mr → zentao-writeback (confirm + set-browser + resolve).
+负责串联 check-config → fetch → create-branch → push → create-issue →
+create-mr → zentao-writeback（confirm + set-browser + resolve）整条流程。
 """
 
 import json

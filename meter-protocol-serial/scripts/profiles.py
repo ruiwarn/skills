@@ -9,7 +9,7 @@ from typing import Optional
 @dataclass
 class SerialConfig:
     """串口配置数据类"""
-    baud: int = 2400
+    baud: int = 9600
     data_bits: int = 8
     parity: str = "even"  # even, odd, none
     stop_bits: int = 1

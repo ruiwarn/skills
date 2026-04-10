@@ -210,7 +210,7 @@ def main():
   op=read|write|set     操作类型
   port=COMx             串口(可选，省略则只组帧)
   timeout_ms=2000       超时时间(毫秒)
-  baud=2400             波特率
+  baud=9600             波特率
   data_bits=8           数据位
   parity=even           校验位(even/odd/none)
   stop_bits=1           停止位
@@ -220,7 +220,7 @@ def main():
 
 645专用:
   di=00010000           数据标识(8位十六进制)
-  addr=000000000000     表地址(12位BCD)
+  addr=AAAAAAAAAAAA     表地址(12位BCD)
   value=hex:0102        写数据值
   fe_count=4            前导FE个数
   raw_prefix=hex:...    前置数据

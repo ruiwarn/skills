@@ -308,16 +308,10 @@ $SKILL_DIR/
 │   ├── check_config.py               ← 配置检查
 │   ├── config_paths.py               ← 路径解析
 │   ├── zentao.py                     ← 禅道 API
-│   ├── gitlab.py                     ← GitLab API
-│   ├── bugfix_flow.sh                ← (旧版 shell，已废弃)
-│   ├── check_config.sh               ← (旧版 shell，已废弃)
-│   ├── config_paths.sh               ← (旧版 shell，已废弃)
-│   ├── zentao.sh                     ← (旧版 shell，已废弃)
-│   └── gitlab.sh                     ← (旧版 shell，已废弃)
+│   └── gitlab.py                     ← GitLab API
 ├── templates/
 │   ├── issue_6d_template.md          ← Issue 6D 模板
 │   └── mr_template.md                ← MR 描述模板
 └── tests/
-    ├── test_config_paths.py          ← Python 测试（pytest）
-    └── config_resolution_test.sh     ← (旧版 shell 测试，已废弃)
+    └── test_config_paths.py          ← Python 测试（pytest）
 ```

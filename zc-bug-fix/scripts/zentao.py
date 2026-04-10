@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""禅道 API 操作脚本 - Python 版本
+"""禅道 API 操作脚本 - Python 版本。
 
-替代 zentao.sh（348 行），使用 Python 标准库实现禅道 REST API 操作。
-基于 cookie 认证，无需外部依赖。
+使用 Python 标准库实现禅道 REST API 操作，基于 cookie 认证，无需外部依赖。
 """
 
 import sys
@@ -289,7 +288,7 @@ def print_usage():
 
 
 def main():
-    """CLI 入口，兼容 zentao.sh 的命令行接口。"""
+    """CLI 入口，兼容旧命令行接口。"""
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
         print_usage()
         sys.exit(0 if len(sys.argv) >= 2 else 1)

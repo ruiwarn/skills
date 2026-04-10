@@ -1,7 +1,6 @@
 """Tests for the zc-bug-fix Python modules.
 
-Replaces the bash-based config_resolution_test.sh with pytest tests that
-validate config_paths, check_config, zentao, and bugfix_flow modules.
+Validates config_paths, check_config, zentao, and bugfix_flow modules.
 """
 
 import os

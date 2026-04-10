@@ -116,7 +116,7 @@ def print_usage():
 
 
 def main():
-    """CLI 入口，匹配 gitlab.sh 接口。"""
+    """CLI 入口，兼容旧命令行接口。"""
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
         print_usage()
         sys.exit(0 if sys.argv[1:] and sys.argv[1] in ("-h", "--help", "help") else 1)

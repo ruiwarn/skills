@@ -57,11 +57,11 @@ python3 $SKILL_DIR/scripts/protocol_cli.py proto=698 op=set oad=43000300 value=b
 
 #### Windows / WSL (重要差异)
 
-**WSL中使用Windows串口时，必须用 `python.exe` 而不是 `python3`：**
+**WSL中使用Windows串口时，推荐走 Python 包装脚本，它会自动转成 `python.exe` + Windows 路径：**
 
 ```bash
-# WSL中访问Windows COM口（推荐方式：使用便利脚本）
-$SKILL_DIR/meter-cmd.sh port=COM10 proto=645 op=read di=04000401
+# WSL中访问Windows COM口（推荐方式：使用 Python 包装脚本）
+python3 $SKILL_DIR/meter-cmd.py port=COM10 proto=645 op=read di=04000401
 
 # 或者手动转换路径
 SKILL_PATH=$(wslpath -w /home/xx/.agents/skills/meter-protocol-serial/scripts/protocol_cli.py)
@@ -98,8 +98,8 @@ python C:\path\to\scripts\protocol_cli.py port=COM10 proto=645 op=read di=040004
 # Linux/WSL通用（只组帧，无串口）
 python3 $SKILL_DIR/scripts/protocol_cli.py proto=645 op=read di=00010000 expect=ack
 
-# WSL+Windows串口（用python.exe）
-python.exe $SKILL_DIR/scripts/protocol_cli.py port=COM3 proto=645 op=read di=00010000 expect=ack
+# WSL+Windows串口（推荐直接走包装脚本）
+python3 $SKILL_DIR/meter-cmd.py port=COM3 proto=645 op=read di=00010000 expect=ack
 ```
 
 ### 支持的协议
