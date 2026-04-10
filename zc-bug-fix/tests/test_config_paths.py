@@ -427,3 +427,22 @@ class TestUrlValidation:
     def test_mr_link_embedded_in_text(self):
         text = "MR 链接: https://gitlab.local/o/r/-/merge_requests/12 done"
         assert bugfix_flow.contains_gitlab_mr_link(text) is True
+
+
+# =========================================================================
+# 6. CLI help text (bugfix_flow)
+# =========================================================================
+
+
+class TestUsageText:
+    """CLI help should describe stage-on-demand usage instead of forced order."""
+
+    def test_print_usage_prefers_user_selected_stage(self, capsys):
+        bugfix_flow.print_usage()
+
+        captured = capsys.readouterr()
+        output = captured.out
+
+        assert "可按用户指定阶段开始" in output
+        assert "严格顺序执行" not in output
+        assert "按阶段编号 0→8 顺序执行" not in output

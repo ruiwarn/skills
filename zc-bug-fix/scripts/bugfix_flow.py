@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""bug-fix 主控脚本（严格顺序执行）- Python 版本。
+"""bug-fix 主控脚本（按需阶段执行）- Python 版本。
 
-负责串联 check-config → fetch → create-branch → push → create-issue →
-create-mr → zentao-writeback（confirm + set-browser + resolve）整条流程。
+提供 check-config、fetch、create-branch、push、create-issue、create-mr、
+zentao-writeback 等分阶段命令，按用户当前所处阶段按需调用。
 """
 
 import json
@@ -241,9 +241,9 @@ def create_mr(gitlab_client: GitLabClient, bug_id: str, source_branch: str,
 
 def print_usage():
     script_name = os.path.basename(sys.argv[0])
-    print(f"""bug-fix 主控脚本（严格顺序执行）- Python 版本
+    print(f"""bug-fix 主控脚本（按需阶段执行）- Python 版本
 
-推荐命令（按阶段顺序使用）:
+常用命令（根据用户指定阶段按需使用）:
   {script_name} check-config                                          # 阶段 0: 检查配置
   {script_name} fetch <bug_id>                                        # 阶段 1: 读取禅道 Bug
   {script_name} create-branch <bug_id> <short_desc>                   # 阶段 4: 创建 bugfix 分支
@@ -259,12 +259,13 @@ def print_usage():
   {script_name} config-hint
 
 说明:
-  1. 按阶段编号 0→8 顺序执行
-  2. 禁止在 develop/main/master 上直接 commit 或 push
-  3. zentao-writeback 四个参数全部必填
-  4. bug_type 是中文分类名，会写入禅道 browser 字段（不是评论）
-  5. issue / MR 描述必须先写入文件，不要拼命令行
-  6. resolve 默认转派给 zc-bug-fix.config 中的 PROJECT_OWNER""")
+  1. 可按用户指定阶段开始，不要因为固定流程强制退回阶段 0
+  2. 执行依赖配置 / GitLab / 禅道的命令前，先运行 check-config
+  3. 禁止在 develop/main/master 上直接 commit 或 push
+  4. zentao-writeback 仍要求 bug_id、bug_type、issue_url、mr_url 四个参数全部存在
+  5. bug_type 是中文分类名，会写入禅道 browser 字段（不是评论）
+  6. issue / MR 描述必须先写入文件，不要拼命令行
+  7. resolve 默认转派给 zc-bug-fix.config 中的 PROJECT_OWNER""")
 
 
 def main():
