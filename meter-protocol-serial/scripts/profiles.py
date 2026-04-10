@@ -19,13 +19,13 @@ class SerialConfig:
 @dataclass
 class Profile645:
     """DL/T645-2007 协议默认配置"""
-    # 默认地址: 12位BCD码，这里是"000000000000"
-    default_addr: str = "000000000000"
+    # 默认地址: 12位BCD码，全AA通配地址
+    default_addr: str = "AAAAAAAAAAAA"
     # 前导FE个数
     fe_count: int = 4
-    # 串口配置
+    # 串口配置 (9600 8E1)
     serial: SerialConfig = field(default_factory=lambda: SerialConfig(
-        baud=2400,
+        baud=9600,
         data_bits=8,
         parity="even",
         stop_bits=1,
