@@ -30,35 +30,31 @@ def encode_ascii_value(value_str: str) -> bytes:
 def encode_bool_value(value_str: str) -> bytes:
     """
     编码 bool: 前缀的值为 A-XDR Data 格式
-    A-XDR BOOL: tag=0x01, 值=0x00/0x01
+    A-XDR BOOL: tag=3 (Section 7.2), value=0x00/0x01
     """
     if not value_str.startswith("bool:"):
         raise ValueError(f"值必须以 bool: 开头: {value_str}")
 
     val = value_str[5:].lower().strip()
     if val in ("true", "1", "yes", "on"):
-        return b'\x01\x01'  # tag=BOOL(0x01), value=1
+        return b'\x03\x01'  # tag=3(bool), value=1
     else:
-        return b'\x01\x00'  # tag=BOOL(0x01), value=0
+        return b'\x03\x00'  # tag=3(bool), value=0
 
 
 def encode_int_value(value_str: str) -> bytes:
     """
-    编码整数类型值为 A-XDR Data 格式
-    A-XDR INTEGER: tag=0x10, length, value
-    A-XDR LONG: tag=0x05, 4字节值 (大端有符号)
+    编码整数类型值为 A-XDR Data 格式 (Section 7.2).
+    integer(int8): tag=15, 1 byte signed
+    long(int16): tag=16, 2 bytes BE signed
+    double-long(int32): tag=5, 4 bytes BE signed
     """
-    for prefix, size, tag in [("int8:", 1, 0x10), ("int16:", 2, 0x10), ("int32:", 4, 0x05)]:
+    for prefix, size, tag in [("int8:", 1, 15), ("int16:", 2, 16), ("int32:", 4, 5)]:
         if value_str.startswith(prefix):
             try:
                 val = int(value_str[len(prefix):])
-                if size == 4:
-                    # DOUBLE-LONG (int32): tag=0x05, 4字节大端有符号
-                    return bytes([tag]) + struct.pack(">i", val)
-                else:
-                    # INTEGER: tag=0x10, length, value
-                    fmt = {1: "b", 2: ">h"}[size]
-                    return bytes([tag, size]) + struct.pack(fmt, val)
+                fmt = {1: ">b", 2: ">h", 4: ">i"}[size]
+                return bytes([tag]) + struct.pack(fmt, val)
             except (ValueError, struct.error) as e:
                 raise ValueError(f"无法编码 {prefix} 值: {value_str}, 错误: {e}")
     raise ValueError(f"未知的整数类型: {value_str}")
@@ -66,21 +62,17 @@ def encode_int_value(value_str: str) -> bytes:
 
 def encode_uint_value(value_str: str) -> bytes:
     """
-    编码无符号整数类型值为 A-XDR Data 格式
-    A-XDR UNSIGNED: tag=0x12, length, value
-    A-XDR UNSIGNED32: tag=0x06, 4字节值 (大端无符号)
+    编码无符号整数类型值为 A-XDR Data 格式 (Section 7.2).
+    unsigned(uint8): tag=17, 1 byte
+    long-unsigned(uint16): tag=18, 2 bytes BE
+    double-long-unsigned(uint32): tag=6, 4 bytes BE
     """
-    for prefix, size, tag in [("uint8:", 1, 0x12), ("uint16:", 2, 0x12), ("uint32:", 4, 0x06)]:
+    for prefix, size, tag in [("uint8:", 1, 17), ("uint16:", 2, 18), ("uint32:", 4, 6)]:
         if value_str.startswith(prefix):
             try:
                 val = int(value_str[len(prefix):])
-                if size == 4:
-                    # UNSIGNED32: tag=0x06, 4字节大端无符号
-                    return bytes([tag]) + struct.pack(">I", val)
-                else:
-                    # UNSIGNED: tag=0x12, length, value
-                    fmt = {1: "B", 2: ">H"}[size]
-                    return bytes([tag, size]) + struct.pack(fmt, val)
+                fmt = {1: "B", 2: ">H", 4: ">I"}[size]
+                return bytes([tag]) + struct.pack(fmt, val)
             except (ValueError, struct.error) as e:
                 raise ValueError(f"无法编码 {prefix} 值: {value_str}, 错误: {e}")
     raise ValueError(f"未知的无符号整数类型: {value_str}")
@@ -89,21 +81,20 @@ def encode_uint_value(value_str: str) -> bytes:
 def encode_enum_value(value_str: str) -> bytes:
     """
     编码 enum: 前缀的值为 A-XDR Data 格式
-    A-XDR ENUM: tag=0x16, value (1字节)
+    A-XDR ENUM: tag=22 (0x16), value (1字节)
     """
     if not value_str.startswith("enum:"):
         raise ValueError(f"值必须以 enum: 开头: {value_str}")
 
     try:
         val = int(value_str[5:])
-        # ENUM: tag=0x16, value (1字节)
-        return bytes([0x16, val & 0xFF])
+        return bytes([22, val & 0xFF])  # tag=22(enum)
     except (ValueError, struct.error) as e:
         raise ValueError(f"无法编码 enum 值: {value_str}, 错误: {e}")
 
 
 def encode_octet_value(value_str: str) -> bytes:
-    """编码 octet: 前缀的值为八位串，格式: octet:11223344 或 octet:1122"""
+    """编码 octet: 前缀的值为 A-XDR octet-string, tag=9, length, data"""
     if not value_str.startswith("octet:"):
         raise ValueError(f"值必须以 octet: 开头: {value_str}")
 
@@ -112,19 +103,17 @@ def encode_octet_value(value_str: str) -> bytes:
         raise ValueError(f"octet 十六进制字符串长度必须是偶数: {hex_str}")
 
     data = bytes.fromhex(hex_str)
-    # 698 A-XDR: octet-string 带长度前缀(1字节)
-    return bytes([len(data)]) + data
+    return bytes([9, len(data)]) + data  # tag=9(octet-string) + length + data
 
 
 def encode_string_value(value_str: str) -> bytes:
-    """编码 string: 前缀的值为可见字符串，格式: string:abc"""
+    """编码 string: 前缀的值为 A-XDR visible-string, tag=10, length, data"""
     if not value_str.startswith("string:"):
         raise ValueError(f"值必须以 string: 开头: {value_str}")
 
     str_data = value_str[7:]
     ascii_data = str_data.encode("ascii")
-    # 698 A-XDR: visible-string 带长度前缀
-    return bytes([len(ascii_data)]) + ascii_data
+    return bytes([10, len(ascii_data)]) + ascii_data  # tag=10(visible-string) + length + data
 
 
 def encode_698_value(value_str: str) -> bytes:

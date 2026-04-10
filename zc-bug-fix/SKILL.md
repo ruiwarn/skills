@@ -28,7 +28,7 @@ description: Use when the user asks to fix a bug, resolve an issue, or provides 
 
 **执行：**
 ```bash
-$SKILL_DIR/scripts/bugfix_flow.sh check-config
+python3 $SKILL_DIR/scripts/bugfix_flow.py check-config
 ```
 
 **如果输出 `CONFIG_OK`：** 进入阶段 1。
@@ -46,7 +46,7 @@ cp $SKILL_DIR/zc-bug-fix.config.example ./zc-bug-fix.config
 
 **执行：**
 ```bash
-$SKILL_DIR/scripts/bugfix_flow.sh fetch <bug_id>
+python3 $SKILL_DIR/scripts/bugfix_flow.py fetch <bug_id>
 ```
 
 **必须从返回的 JSON 中提取以下信息：**
@@ -129,7 +129,7 @@ make -C .test 2>/dev/null || true
 
 **4.1 创建 bugfix 分支（脚本自动从 develop 创建）：**
 ```bash
-$SKILL_DIR/scripts/bugfix_flow.sh create-branch <bug_id> <short-desc>
+python3 $SKILL_DIR/scripts/bugfix_flow.py create-branch <bug_id> <short-desc>
 ```
 分支名格式：`bugfix/<bug_id>-<short-desc>`
 
@@ -144,7 +144,7 @@ git commit -m "fix(bug#<bug_id>): <简要描述问题和修复方案>"
 
 **4.3 推送分支（脚本自动拒绝推送到保护分支）：**
 ```bash
-$SKILL_DIR/scripts/bugfix_flow.sh push-branch
+python3 $SKILL_DIR/scripts/bugfix_flow.py push-branch
 ```
 
 **检查点：** 确认远程分支已创建。记住分支名，阶段 6 需要用。
@@ -174,7 +174,7 @@ Issue 必须至少包含：
 
 **5.2 创建 Issue：**
 ```bash
-$SKILL_DIR/scripts/bugfix_flow.sh create-issue <bug_id> /tmp/issue_<bug_id>.md "bug,<标签>"
+python3 $SKILL_DIR/scripts/bugfix_flow.py create-issue <bug_id> /tmp/issue_<bug_id>.md "bug,<标签>"
 ```
 
 **检查点：** 从脚本输出的 JSON 中提取 `web_url` 字段，保存为 `ISSUE_URL`。阶段 7 必须使用。
@@ -196,7 +196,7 @@ MR 描述必须包含：修复内容、根因、修改文件、验证结果、�
 
 **6.2 创建 MR：**
 ```bash
-$SKILL_DIR/scripts/bugfix_flow.sh create-mr <bug_id> "bugfix/<bug_id>-<short-desc>" /tmp/mr_<bug_id>.md
+python3 $SKILL_DIR/scripts/bugfix_flow.py create-mr <bug_id> "bugfix/<bug_id>-<short-desc>" /tmp/mr_<bug_id>.md
 ```
 
 **检查点：** 从脚本输出的 JSON 中提取 `web_url` 字段，保存为 `MR_URL`。阶段 7 必须使用。
@@ -215,7 +215,7 @@ $SKILL_DIR/scripts/bugfix_flow.sh create-mr <bug_id> "bugfix/<bug_id>-<short-des
 
 **使用一条命令完成全部禅道回写：**
 ```bash
-$SKILL_DIR/scripts/bugfix_flow.sh zentao-writeback <bug_id> "<bug_type>" "<ISSUE_URL>" "<MR_URL>"
+python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-writeback <bug_id> "<bug_type>" "<ISSUE_URL>" "<MR_URL>"
 ```
 
 这条命令会**自动**完成以下四步：
@@ -262,13 +262,13 @@ $SKILL_DIR/scripts/bugfix_flow.sh zentao-writeback <bug_id> "<bug_type>" "<ISSUE
 
 ```bash
 # 1. 确认 Bug（评论必须包含 Issue URL）
-$SKILL_DIR/scripts/bugfix_flow.sh zentao-confirm <bug_id> "已创建 GitLab issue: <ISSUE_URL>"
+python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-confirm <bug_id> "已创建 GitLab issue: <ISSUE_URL>"
 
 # 2. 设置 browser 字段（传中文分类名，不是写评论！）
-$SKILL_DIR/scripts/bugfix_flow.sh zentao-set-browser-type <bug_id> "<bug_type>"
+python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-set-browser-type <bug_id> "<bug_type>"
 
 # 3. 解决 Bug（评论必须包含 MR URL）
-$SKILL_DIR/scripts/bugfix_flow.sh zentao-resolve <bug_id> "已创建 GitLab MR: <MR_URL>" "" "<bug_type>"
+python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-resolve <bug_id> "已创建 GitLab MR: <MR_URL>" "" "<bug_type>"
 ```
 
 ---
@@ -304,14 +304,20 @@ $SKILL_DIR/
 ├── SKILL.md                          ← 本文件（严格执行协议）
 ├── zc-bug-fix.config.example         ← 配置模板
 ├── scripts/
-│   ├── bugfix_flow.sh                ← 主控脚本（优先使用）
-│   ├── check_config.sh               ← 配置检查
-│   ├── config_paths.sh               ← 路径解析
-│   ├── zentao.sh                     ← 禅道 API
-│   └── gitlab.sh                     ← GitLab API
+│   ├── bugfix_flow.py                ← 主控脚本（优先使用）
+│   ├── check_config.py               ← 配置检查
+│   ├── config_paths.py               ← 路径解析
+│   ├── zentao.py                     ← 禅道 API
+│   ├── gitlab.py                     ← GitLab API
+│   ├── bugfix_flow.sh                ← (旧版 shell，已废弃)
+│   ├── check_config.sh               ← (旧版 shell，已废弃)
+│   ├── config_paths.sh               ← (旧版 shell，已废弃)
+│   ├── zentao.sh                     ← (旧版 shell，已废弃)
+│   └── gitlab.sh                     ← (旧版 shell，已废弃)
 ├── templates/
 │   ├── issue_6d_template.md          ← Issue 6D 模板
 │   └── mr_template.md                ← MR 描述模板
 └── tests/
-    └── config_resolution_test.sh     ← 配置解析回归测试
+    ├── test_config_paths.py          ← Python 测试（pytest）
+    └── config_resolution_test.sh     ← (旧版 shell 测试，已废弃)
 ```
