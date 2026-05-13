@@ -1,0 +1,6 @@
+{
+  "permissions": {
+    "allow": ["Bash(*)", "Edit(*)", "Write(*)", "Read(*)", "WebFetch(*)", "TodoWrite", "TodoRead"],
+    "defaultMode": "dontAsk"
+  }
+}

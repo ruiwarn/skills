@@ -1,0 +1,188 @@
+{
+  "name": "AI 修复bug (MR合并后)",
+  "nodes": [
+    {
+      "name": "GitLab MR 合并触发",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "path": "gitlab-mr-merged",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "name": "过滤非合并事件",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.body.object_attributes.action}}",
+              "value2": "merge",
+              "operation": "equal"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "提取BugID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "bugId",
+              "value": "={{ $json.body.object_attributes.description.match(/BUG_ID=(\\d+)/)?.[1] ?? '' }}"
+            },
+            {
+              "name": "bugType",
+              "value": "={{ $json.body.object_attributes.description.match(/BUG_TYPE=([^\\n]+)/)?.[1] ?? '' }}"
+            },
+            {
+              "name": "mrUrl",
+              "value": "={{ process.env.GITLAB_URL + '/' + $json.body.project.path_with_namespace + '/-/merge_requests/' + $json.body.object_attributes.iid }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "检查BugID是否存在",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.bugId}}",
+              "value2": "",
+              "operation": "notEqual"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "禅道合并后解决",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1290,
+        200
+      ],
+      "parameters": {
+        "command": "cd {{process.env.PROJECT_DIR}} && python3 /root/.claude/skills/zc-bug-fix/scripts/bugfix_flow.py zentao-postmerge-resolve {{$json.bugId}} {{$json.bugType}} {{$json.mrUrl}}"
+      }
+    },
+    {
+      "name": "记录无BugID跳过",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "7a137259-30df-403d-a787-6e5de376c151",
+      "name": "验证BugType",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        810,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const ALLOWED_BUG_TYPES = [\n  \"需求不清问题\", \"需求错误问题\",\n  \"设计_系统整体设计问题\", \"设计_功能间接口问题\", \"设计_功能交互问题\",\n  \"设计_边界值设计问题\", \"设计_流程逻辑设计问题\", \"设计_算法设计问题\",\n  \"编码_流程逻辑实现问题\", \"编码_编程规范语法问题\", \"编码_编程规范内存问题\",\n  \"编码_编程规范初始化\", \"编码_编程规范函数用错\", \"编码_编程规范指针调用\",\n  \"编码_代码合并问题\", \"编码_模块间接口问题\", \"编码_库使用问题\", \"编码_库修改问题\",\n  \"编码-内核保护机制问题\",\n];\nconst FALLBACK_BUG_TYPE = \"编码_流程逻辑实现问题\";\nconst raw     = String($input.item.json.bugType || '').trim();\nconst bugType = ALLOWED_BUG_TYPES.includes(raw) ? raw : FALLBACK_BUG_TYPE;\nreturn { ...$input.item.json, bugType, bugTypeRaw: raw };\n",
+        "mode": "runOnceForEachItem"
+      }
+    }
+  ],
+  "connections": {
+    "GitLab MR 合并触发": {
+      "main": [
+        [
+          {
+            "node": "过滤非合并事件",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "过滤非合并事件": {
+      "main": [
+        [
+          {
+            "node": "提取BugID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "提取BugID": {
+      "main": [
+        [
+          {
+            "node": "检查BugID是否存在",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "检查BugID是否存在": {
+      "main": [
+        [
+          {
+            "node": "验证BugType",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "记录无BugID跳过",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证BugType": {
+      "main": [
+        [
+          {
+            "node": "禅道合并后解决",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

@@ -27,6 +27,11 @@ npx skills add https://github.com/ruiwarn/skills
 npx skills add <仓库地址> --skill <技能名>
 ```
 
+更新全部技能：
+```bash
+npx skills update -g
+```
+
 一次安装多个技能：
 
 ```bash

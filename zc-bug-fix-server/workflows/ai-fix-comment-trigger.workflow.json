@@ -1,0 +1,2076 @@
+{
+  "updatedAt": "2026-05-09T02:19:16.462Z",
+  "createdAt": "2025-05-27T08:34:16.124Z",
+  "id": "jF5WhH6jDYHVmIGl",
+  "name": "AI 修复bug",
+  "description": "",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "e282ca0c-7aee-466e-af79-a2dfaa15af9c",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -272,
+        16
+      ],
+      "id": "d08cff43-7f85-4983-9749-552426b82a03",
+      "name": "Webhook",
+      "webhookId": "37613d28-5aae-4e29-a888-774211f409a4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0011",
+              "leftValue": "={{ $json.body.objectType }}",
+              "rightValue": "bug",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0012",
+              "leftValue": "={{ $json.body.action }}",
+              "rightValue": "commented",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0013",
+              "leftValue": "={{ $json.body.comment || \"\" }}",
+              "rightValue": "/ai-fix",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0014",
+              "leftValue": "={{ $json.body.actor || \"\" }}",
+              "rightValue": "ai-bot",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0015",
+              "leftValue": "={{ $json.body.comment || \"\" }}",
+              "rightValue": "AI处理中",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -16,
+        0
+      ],
+      "id": "5b38d2ad-e9bc-4b4a-a0e4-08cfc9074a11",
+      "name": "过滤 /ai-fix"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst bugId      = String($input.item.json.body?.objectID || '').trim();\n\n// ── 解析禅道产品 ID（格式 \",52,\" → \"52\"）───────────────────────────────────\nconst rawProduct    = String($input.item.json.body?.product || '');\nconst productIdMatch = rawProduct.match(/\\d+/);\nconst productId     = productIdMatch ? productIdMatch[0] : '';\n\n// body.project / body.projectName 作为备用键\nconst projectKey = String($input.item.json.body?.project   ||\n                          $input.item.json.body?.projectName || '').trim();\n\n// ── 读取上游配置节点 ─────────────────────────────────────────────────────────\nconst cfg = $input.item.json._config || {};\nconst sec = $input.item.json._secrets || {};\n\nconst projects     = cfg.projects     || {};\nconst productIdMap = cfg.productIdMap || {};\nconst defaults     = cfg.defaults     || {};\n\n// ── 查找项目配置（优先产品ID，回退项目名）───────────────────\nconst projCfg = (productId && productIdMap[productId])\n             || (projectKey && projects[projectKey])\n             || {};\n\nconst resolvedProject = projCfg.displayName || projectKey || ('productId=' + productId) || '未知项目';\n\nconst sourceRepo      = projCfg.repoPath        || '';\nconst gitlabProjectId = projCfg.gitlabProjectId || '';\nconst projectOwner    = projCfg.projectOwner    || defaults.projectOwner || '';\nconst targetBranch    = projCfg.targetBranch    || defaults.targetBranch || 'develop';\nconst worktreeBase    = defaults.worktreeBase   || '/tmp/n8n-worktrees';\nconst worktreeDir     = worktreeBase + '/bugfix-' + bugId;\n\nconst zentaoUrl      = sec.zentaoUrl      || '';\nconst zentaoAccount  = sec.zentaoAccount  || '';\nconst zentaoPassword = sec.zentaoPassword || '';\nconst gitlabUrl      = sec.gitlabUrl      || '';\nconst gitlabToken    = sec.gitlabToken    || '';\n\nconst credFile = '/tmp/n8n-creds-' + bugId + '.env';\nconst bugFile  = worktreeDir + '/.ai-fix/bug.json';\nconst skillPy  = '/root/.claude/skills/zc-bug-fix/scripts/bugfix_flow.py';\n\nfunction shellSingleQuote(v) {\n  return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nfunction buildCreateCredsCmd() {\n  const pairs = [\n    ['ZENTAO_URL',        zentaoUrl],\n    ['ZENTAO_ACCOUNT',    zentaoAccount],\n    ['ZENTAO_PASSWORD',   zentaoPassword],\n    ['GITLAB_URL',        gitlabUrl],\n    ['GITLAB_TOKEN',      gitlabToken],\n    ['GITLAB_PROJECT_ID', gitlabProjectId],\n    ['PROJECT_OWNER',     projectOwner],\n    ['TARGET_BRANCH',     targetBranch],\n    ['ALLOW_GIT_PUSH',    '1'],\n  ];\n  const lines = ['rm -f ' + shellSingleQuote(credFile)];\n  for (const [k, v] of pairs) {\n    lines.push('printf \"%s\\\\n\" ' + shellSingleQuote(k + '=' + v) + ' >> ' + shellSingleQuote(credFile));\n  }\n  return lines.join('\\n');\n}\n\nfunction buildCommentCommand(commentText, tmpSuffix) {\n  if (!/^\\d+$/.test(bugId)) return 'echo \"STATUS=COMMENT_SKIPPED\"';\n  const tmp = '/tmp/zentao-' + tmpSuffix + '-' + bugId + '.txt';\n  return [\n    'echo ' + shellSingleQuote(commentText) + ' > ' + tmp,\n    'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile) +\n      ' python3 ' + skillPy + ' zentao-comment ' +\n      shellSingleQuote(bugId) + ' ' + tmp + ' 2>/dev/null || true',\n    'rm -f ' + tmp,\n    'echo \"STATUS=COMMENT_DONE\"'\n  ].join('\\n');\n}\n\nlet setupLines = [];\nif (!bugId || !/^\\d+$/.test(bugId)) {\n  setupLines = ['echo \"STATUS=FAIL\"', 'echo \"SUMMARY=invalid or missing bug id\"'];\n} else if (!sourceRepo) {\n  const hint = productId\n    ? 'productId=' + productId + ' (body.product=' + rawProduct + ')'\n    : (projectKey ? 'projectKey=' + projectKey : 'no project/product in body');\n  setupLines = [\n    'echo \"STATUS=FAIL\"',\n    'echo \"SUMMARY=no repo configured for ' + hint + '; add it in [[项目配置] 项目配置] node (column [5] for productId)\"',\n  ];\n} else if (!zentaoUrl || !gitlabToken) {\n  setupLines = [\n    'echo \"STATUS=FAIL\"',\n    'echo \"SUMMARY=missing credentials; fill in [[密钥配置] 密钥配置] node\"'\n  ];\n} else {\n  setupLines = [\n    'export ZENTAO_URL='         + shellSingleQuote(zentaoUrl),\n    'export ZENTAO_ACCOUNT='     + shellSingleQuote(zentaoAccount),\n    'export ZENTAO_PASSWORD='    + shellSingleQuote(zentaoPassword),\n    'export GITLAB_URL='         + shellSingleQuote(gitlabUrl),\n    'export GITLAB_TOKEN='       + shellSingleQuote(gitlabToken),\n    'export GITLAB_PROJECT_ID='  + shellSingleQuote(gitlabProjectId),\n    'export PROJECT_OWNER='      + shellSingleQuote(projectOwner),\n    'export TARGET_BRANCH='      + shellSingleQuote(targetBranch),\n    'export ALLOW_GIT_PUSH=1',\n    'CONFIG_FILE=' + shellSingleQuote(sourceRepo + '/.claude/ai-fix.env'),\n    'if [ -f \"$CONFIG_FILE\" ]; then set -a; . \"$CONFIG_FILE\" >/dev/null 2>&1 || true; set +a; fi',\n    'BUG_ID=' + shellSingleQuote(bugId),\n    'WORKTREE_DIR=' + shellSingleQuote(worktreeDir),\n    'SOURCE_REPO=' + shellSingleQuote(sourceRepo),\n    'WORKTREE_BASE=' + shellSingleQuote(worktreeBase),\n    'LOCK_DIR=\"/tmp/ai-fix-bug-${BUG_ID}.lock\"',\n    'if ! mkdir \"$LOCK_DIR\" 2>/dev/null; then',\n    '  echo \"STATUS=FAIL\"',\n    '  echo \"SUMMARY=another ai fix is already running for this bug\"',\n    '  exit 0',\n    'fi',\n    \"trap 'rmdir \\\"$LOCK_DIR\\\" >/dev/null 2>&1' EXIT\",\n    'if [ ! -d \"$SOURCE_REPO/.git\" ]; then echo \"STATUS=FAIL\"; echo \"SUMMARY=source repo missing at $SOURCE_REPO\"; exit 0; fi',\n    'mkdir -p \"$WORKTREE_BASE\"',\n    'if ! git -C \"$SOURCE_REPO\" fetch origin ' + shellSingleQuote(targetBranch) + ' >/dev/null 2>&1; then echo \"STATUS=FAIL\"; echo \"SUMMARY=git fetch origin ' + targetBranch + ' failed\"; exit 0; fi',\n    'git -C \"$SOURCE_REPO\" worktree remove --force \"$WORKTREE_DIR\" >/dev/null 2>&1 || true',\n    'rm -rf \"$WORKTREE_DIR\"',\n    'if ! git -C \"$SOURCE_REPO\" worktree add -B \"bugfix/${BUG_ID}\" \"$WORKTREE_DIR\" \"origin/' + targetBranch + '\" >/dev/null 2>&1; then',\n    '  echo \"STATUS=FAIL\"',\n    '  echo \"SUMMARY=git worktree creation failed\"',\n    '  exit 0',\n    'fi',\n    'echo \"STATUS=SETUP_OK\"',\n    'mkdir -p \"${WORKTREE_DIR}/.ai-fix\"',\n    'echo \".ai-fix/\" >> \"${WORKTREE_DIR}/.gitignore\"',\n    '# 预读取禅道 Bug（ Claude 直接使用）',\n    'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile) + ' python3 ' + shellSingleQuote(skillPy) + ' fetch ' + shellSingleQuote(bugId) +\n      ' > ' + shellSingleQuote(bugFile) + ' 2>&1',\n    'if python3 -c \"import json,sys; d=json.load(open(' + shellSingleQuote(bugFile) + ')); sys.exit(0 if d.get(\\'status\\')==\\'success\\' else 1)\" 2>/dev/null; then',\n    '  echo \"STATUS=BUG_PREFETCHED\"',\n    'else',\n    '  echo \"STATUS=BUG_FETCH_WARN (Claude will re-fetch)\"',\n    'fi',\n  ];\n}\nconst setupCommand = setupLines.join('\\n');\n\nconst credPrefix = 'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile);\nconst issueDescFile = worktreeDir + '/.ai-fix/issue-desc.md';\nconst mrDescFile    = worktreeDir + '/.ai-fix/mr-desc.md';\n\nconst prompt = [\n  '你正在执行 zc-bug-fix skill 的 Server Unattended Mode。',\n  '这是由 n8n 触发的无人值守修复流程，不要向用户提问，不要等待确认。',\n  '',\n  '目标：处理禅道 Bug #' + bugId + '（项目：' + resolvedProject + '）',\n  '工作目录：' + worktreeDir + '（独立 git worktree，已基于 origin/' + targetBranch + ' 创建）',\n  '凭据文件：' + credFile + '（n8n 已写入，不要删除）',\n  '',\n  '▶ Bug 数据已由 n8n 预读取到：' + bugFile,\n  '  格式：{status, zentao_url, bug:{...}}  bug 字段在顶层 bug 对象中，无需二次解析',\n  '  steps 字段含 HTML，图片已是绝对 URL，可直接 WebFetch 获取',\n  '  请先执行：cat ' + bugFile + '  来获取 Bug 详情，无需再调用 fetch 命令。',\n  '  （如果文件读取异常，再用 ' + credPrefix + ' python3 ' + skillPy + ' fetch ' + bugId + ' 作为备用）',\n  '',\n  '▶ 所有 bugfix_flow.py 命令前缀：' + credPrefix,\n  '',\n  '固定执行顺序（严格遵守）：',\n  '1. 读取 ' + bugFile + '   Bug 内容',\n  '2. 分析代码，定位根因，修复代码',\n  '3. 自测验证（运行相关测试，确认通过）',\n  '4. git add <相关文件>（禁止 git add .）',\n  '5. git commit',\n  '6. 读取 Issue 模板：cat $SKILL_DIR/templates/issue_6d_template.md',\n  '   按该模板格式写入 ' + issueDescFile + '，将所有 {{占位符}} 替换为实际内容（必须包含全6个章节，禁止留空占位符）',\n  '7. 读取 MR 模板：cat $SKILL_DIR/templates/mr_template.md',\n  '   按该模板格式写入 ' + mrDescFile + '，将所有 {{占位符}} 替换为实际内容',\n  '   n8n 会自动识别 bug 类型，Claude 无需在文件末尾追加任何额外行。',\n  '   n8n 将自动执行 push-branch / create-issue / create-mr，Claude 无需调用',\n  '',\n  '⚠️ 禁止调用 zentao-premerge-writeback 和 zentao-postmerge-resolve（n8n 自动执行）',\n  '⚠️ 只要验证失败，立即停止，在输出中包含 STATUS=FAIL。',\n  '',\n  '完成后必须在输出末尾（每项单独一行）：',\n  'SUMMARY=<一句话总结>',\n  '(不要输出 ISSUE_URL/MR_URL，n8n 会自动获取)',\n].join('\\n');\n\nconst ackComment = buildCommentCommand(\n  '[AI] AI处理中，自动修复已启动，正在执行 zc-bug-fix 服务器工作流。',\n  'ack'\n);\nconst ackCommand = buildCreateCredsCmd() + '\\n' + ackComment;\n\n\n// ── Push / Issue / MR 命令（在此预构建，Execute Command 节点用 $json.xxx 引用）──\n\nconst pushCommand = [\n  'cd ' + shellSingleQuote(worktreeDir),\n  '# Guard: check if there are actual code changes or new commits',\n  'if [ -z \"$(git status --short)\" ] && [ -z \"$(git log origin/' + targetBranch + '..HEAD --oneline)\" ]; then',\n  '  echo \"STATUS=PUSH_SKIP\"',\n  '  echo \"SUMMARY=no code changes detected, skip push\"',\n  '  exit 0',\n  'fi',\n  'if ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile) +\n    ' python3 ' + shellSingleQuote(skillPy) + ' push-branch 2>&1; then',\n  '  echo \"STATUS=PUSH_OK\"',\n  'else',\n  '  echo \"STATUS=PUSH_FAIL\"',\n  'fi',\n].join('\\n');\n\nconst createIssueCommand = [\n  'CRED=' + shellSingleQuote(credFile),\n  'BUG_ID=' + shellSingleQuote(bugId),\n  'DESC=' + shellSingleQuote(issueDescFile),\n  'if [ ! -f \"$DESC\" ]; then',\n  '  printf \"# Bug #' + bugId + ' AI Fix\\\\n\" > \"$DESC\"',\n  '  printf \"AI-generated fix, see MR for details.\\\\n\" >> \"$DESC\"',\n  'fi',\n  'ZC_BUG_FIX_CONFIG=\"$CRED\" python3 ' + shellSingleQuote(skillPy) +\n    ' create-issue \"$BUG_ID\" \"$DESC\" 2>&1',\n  'echo \"ISSUE_EXIT=$?\"',\n].join('\\n');\n\nconst createMrCommand = [\n  'CRED=' + shellSingleQuote(credFile),\n  'BUG_ID=' + shellSingleQuote(bugId),\n  'BRANCH=\"bugfix/${BUG_ID}\"',\n  'DESC=' + shellSingleQuote(mrDescFile),\n  'if [ ! -f \"$DESC\" ]; then',\n  '  printf \"# Bugfix: Bug #' + bugId + '\\\\n\" > \"$DESC\"',\n  '  printf \"AI-generated fix, see commits for details.\\\\n\" >> \"$DESC\"',\n  'fi',\n  'ZC_BUG_FIX_CONFIG=\"$CRED\" python3 ' + shellSingleQuote(skillPy) +\n    ' create-mr \"$BUG_ID\" \"$BRANCH\" \"$DESC\" 2>&1',\n  'echo \"MR_EXIT=$?\"',\n].join('\\n');\n\nconst earlyFailCommand = [\n  'CRED=' + shellSingleQuote(credFile),\n  'BUG_ID=' + shellSingleQuote(bugId),\n  'SKILL_PY=' + shellSingleQuote(skillPy),\n  'TMP=/tmp/zentao-early-fail-' + bugId + '.txt',\n  'echo ' + shellSingleQuote('AI fix failed: no code changes generated or fix validation failed.') + ' > \"$TMP\"',\n  'ZC_BUG_FIX_CONFIG=\"$CRED\" python3 \"$SKILL_PY\" zentao-comment \"$BUG_ID\" \"$TMP\" 2>/dev/null || true',\n  'rm -f \"$TMP\"',\n  'echo \"STATUS=EARLY_FAIL_DONE\"',\n].join('\\n');\n\n\n\n\n\nconst claudeCommand = (setupLines.length && !setupLines[0].includes('STATUS=FAIL'))\n  ? [\n      'cd ' + shellSingleQuote(worktreeDir),\n      \"printf '%s' \" + shellSingleQuote(prompt) + ' | claude --print --settings /root/.claude/skills/zc-bug-fix/n8n-settings.json 2>&1',\n    ].join('\\n')\n  : 'echo STATUS=FAIL && echo SUMMARY=setup failed, claude not started';\n\n// codexCommand for Codex执行 node (same prompt, Codex CLI)\nconst promptFile   = worktreeDir + '/.ai-fix/codex-prompt.txt';\nconst codexCommand = (setupLines.length && !setupLines[0].includes('STATUS=FAIL'))\n  ? [\n      'printf \\'%s\\' ' + shellSingleQuote(prompt) + ' > ' + shellSingleQuote(promptFile),\n      'cd ' + shellSingleQuote(worktreeDir),\n      'codex --full-auto < ' + shellSingleQuote(promptFile),\n      'CODE=$?',\n      'rm -f ' + shellSingleQuote(promptFile),\n      'exit $CODE',\n    ].join('\\n')\n  : 'echo STATUS=FAIL && echo SUMMARY=setup failed, codex not started';\n\nconst checkFixCommand = (setupLines.length && !setupLines[0].includes('STATUS=FAIL'))\n  ? [\n      'cd ' + shellSingleQuote(worktreeDir),\n      'if git log origin/' + targetBranch + '..HEAD --oneline 2>/dev/null | grep -q .; then',\n      '  echo \"STATUS=VALID\"',\n      '  echo \"SUMMARY=code changes detected\"',\n      'elif [ -n \"$(git status --short 2>/dev/null)\" ]; then',\n      '  echo \"STATUS=VALID\"',\n      '  echo \"SUMMARY=uncommitted changes detected\"',\n      'else',\n      '  echo \"STATUS=INVALID\"',\n      '  echo \"SUMMARY=no code changes in worktree\"',\n      'fi',\n    ].join('\\n')\n  : 'echo \"STATUS=INVALID\" && echo \"SUMMARY=setup failed\"';\n\nreturn {\n  claudeCommand,\n  checkFixCommand,\n  codexCommand,\n  earlyFailCommand,\n  bugId,\n  productId,\n  projectKey,\n  resolvedProject,\n  sourceRepo,\n  worktreeDir,\n  credFile,\n  bugFile,\n  ackCommand,\n  setupCommand,\n  prompt,\n  pushCommand,\n  createIssueCommand,\n  createMrCommand,\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        0
+      ],
+      "id": "0af7dceb-a7f1-4b6d-84ba-e4f26e831021",
+      "name": "准备执行"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.ackCommand }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        0
+      ],
+      "id": "b163f2e0-4de0-4a73-a36d-d76c126b5021",
+      "name": "回写处理中"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const bugId    = String($('准备执行').item.json.bugId    || '').trim();\nconst credFile = String($('准备执行').item.json.credFile || '');\nconst skillPy  = '/root/.claude/skills/zc-bug-fix/scripts/bugfix_flow.py';\n\n// AI output — unified via 合并AI输出 node\nconst claudeOutput = String($('合并AI输出').item?.json?.aiResult || '');\nconst summaryMatch = claudeOutput.match(/^SUMMARY=(.*)$/m);\nconst summary      = summaryMatch ? summaryMatch[1].trim() : 'AI修复流程执行完成';\n\n// Issue URL — parse web_url from GitLab API JSON\nconst issueStdout = String($('创建 Issue').item?.json?.stdout || '');\nlet issueUrl = '';\ntry {\n  const issueEnd = issueStdout.lastIndexOf('\\nISSUE_EXIT=');\n  const issueStr = issueEnd > 0 ? issueStdout.substring(0, issueEnd).trim() : issueStdout.trim();\n  issueUrl = JSON.parse(issueStr).web_url || '';\n} catch(e) {\n  const m = issueStdout.match(/\"web_url\"\\s*:\\s*\"([^\"]+)\"/);\n  issueUrl = m ? m[1] : '';\n}\n\n// MR URL — parse web_url from GitLab API JSON\nconst mrStdout = String($('创建 MR').item?.json?.stdout || '');\nlet mrUrl = '';\ntry {\n  const mrEnd = mrStdout.lastIndexOf('\\nMR_EXIT=');\n  const mrStr = mrEnd > 0 ? mrStdout.substring(0, mrEnd).trim() : mrStdout.trim();\n  mrUrl = JSON.parse(mrStr).web_url || '';\n} catch(e) {\n  const m = mrStdout.match(/\"web_url\"\\s*:\\s*\"([^\"]+)\"/);\n  mrUrl = m ? m[1] : '';\n}\n\n// BUG_TYPE — from OpenAI LLM classification node\nconst ALLOWED_BUG_TYPES = [\n  \"需求不清问题\", \"需求错误问题\",\n  \"设计_系统整体设计问题\", \"设计_功能间接口问题\", \"设计_功能交互问题\",\n  \"设计_边界值设计问题\", \"设计_流程逻辑设计问题\", \"设计_算法设计问题\",\n  \"编码_流程逻辑实现问题\", \"编码_编程规范语法问题\", \"编码_编程规范内存问题\",\n  \"编码_编程规范初始化\", \"编码_编程规范函数用错\", \"编码_编程规范指针调用\",\n  \"编码_代码合并问题\", \"编码_模块间接口问题\", \"编码_库使用问题\", \"编码_库修改问题\",\n  \"编码-内核保护机制问题\"\n];\nconst FALLBACK_BUG_TYPE = '编码_流程逻辑实现问题';\nconst rawClassified = String($('提取BugType').item?.json?.classifiedBugType || '');\nconst bugType      = ALLOWED_BUG_TYPES.includes(rawClassified) ? rawClassified : FALLBACK_BUG_TYPE;\nconst bugTypeValid = ALLOWED_BUG_TYPES.includes(rawClassified);\n\n// isSuccess\nconst pushOut = String($('推送分支').item?.json?.stdout || '');\nconst pushOk  = !pushOut.includes('STATUS=PUSH_FAIL');\nconst isSuccess = !!summaryMatch\n  && !/\\bSTATUS=FAIL\\b/.test(claudeOutput)\n  && pushOk;\n\nfunction shellSingleQuote(v) {\n  return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nfunction buildSuccessCommand() {\n  if (!/^\\d+$/.test(bugId)) return 'echo \"STATUS=COMMENT_SKIPPED\"';\n  const credPrefix = 'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile);\n  if (mrUrl) {\n    const parts = [\n      credPrefix + ' python3 ' + skillPy +\n        ' zentao-premerge-writeback ' +\n        shellSingleQuote(bugId) + ' ' +\n        shellSingleQuote(bugType) + ' ' +\n        shellSingleQuote(issueUrl || '') + ' ' +\n        shellSingleQuote(mrUrl),\n    ];\n    if (!bugTypeValid) {\n      const warnFile = '/tmp/zentao-warn-' + bugId + '.txt';\n      parts.push(\n        'echo ' + shellSingleQuote('BUG_TYPE fallback: ' + bugType) + ' > ' + warnFile,\n        credPrefix + ' python3 ' + skillPy + ' zentao-comment ' +\n          shellSingleQuote(bugId) + ' ' + warnFile + ' 2>/dev/null || true',\n        'rm -f ' + warnFile,\n      );\n    }\n    parts.push('rm -f ' + shellSingleQuote(credFile), 'echo \"STATUS=WRITEBACK_DONE\"');\n    return parts.join('\\n');\n  } else {\n    const tmp = '/tmp/zentao-result-' + bugId + '.txt';\n    return [\n      'echo ' + shellSingleQuote('AI fix done (no MR created, check manually): ' + summary) + ' > ' + tmp,\n      credPrefix + ' python3 ' + skillPy + ' zentao-comment ' +\n        shellSingleQuote(bugId) + ' ' + tmp + ' 2>/dev/null || true',\n      'rm -f ' + tmp, 'rm -f ' + shellSingleQuote(credFile), 'echo \"STATUS=COMMENT_DONE\"',\n    ].join('\\n');\n  }\n}\n\nfunction buildFailCommand() {\n  if (!/^\\d+$/.test(bugId)) return 'echo \"STATUS=COMMENT_SKIPPED\"';\n  const credPrefix = 'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile);\n  const tmp = '/tmp/zentao-result-' + bugId + '.txt';\n  let msg = 'AI fix failed: ' + summary;\n  if (mrUrl) msg += '\\nMR created: ' + mrUrl;\n  return [\n    'echo ' + shellSingleQuote(msg) + ' > ' + tmp,\n    credPrefix + ' python3 ' + skillPy + ' zentao-comment ' +\n      shellSingleQuote(bugId) + ' ' + tmp + ' 2>/dev/null || true',\n    'rm -f ' + tmp, 'rm -f ' + shellSingleQuote(credFile), 'echo \"STATUS=COMMENT_DONE\"',\n  ].join('\\n');\n}\n\nreturn {\n  bugId, isSuccess, summary, issueUrl, mrUrl, bugType, bugTypeValid,\n  successCommentCommand: buildSuccessCommand(),\n  failCommentCommand:    buildFailCommand(),\n  rawOutput: claudeOutput.slice(0, 2000),\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3904,
+        0
+      ],
+      "id": "79e20ac5-3cde-40cd-a791-4e95f8e6f041",
+      "name": "解析结果"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a14ac7f0-1c87-4fa4-a905-3d5715d6b051",
+              "leftValue": "={{ $json.isSuccess }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4144,
+        0
+      ],
+      "id": "5817469e-66ce-4a3a-a9f7-48e9cb979041",
+      "name": "修复成功?"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.successCommentCommand }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        4384,
+        -128
+      ],
+      "id": "a1bbbf0c-cc2c-4809-b2e8-6c2819179071",
+      "name": "回写成功"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.failCommentCommand }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        4384,
+        128
+      ],
+      "id": "b2c0cdd3-df2d-4d93-9ed9-0c57c7033072",
+      "name": "回写失败"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "={{ $('准备执行').item.json.claudeCommand }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        -208
+      ],
+      "id": "ee85f6a2-ccec-44d3-aab1-b2437f1a0c7b",
+      "name": "Claude Code"
+    },
+    {
+      "parameters": {
+        "command": "={{ $('准备执行').item.json.setupCommand }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1264,
+        0
+      ],
+      "id": "aab00001-0000-0000-0000-000000000001",
+      "name": "环境准备"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "aab00002-0000-0000-0000-000000000001",
+              "leftValue": "={{ $json.stdout }}",
+              "rightValue": "STATUS=SETUP_OK",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1504,
+        0
+      ],
+      "id": "aab00003-0000-0000-0000-000000000001",
+      "name": "检查准备"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const stdout   = String($input.item.json.stdout || '');\nconst bugId    = String($('准备执行').item.json.bugId    || '').trim();\nconst credFile = String($('准备执行').item.json.credFile || '');\n\nconst summaryMatch = stdout.match(/^SUMMARY=(.*)$/m);\nconst summary = summaryMatch ? summaryMatch[1].trim() : '环境准备失败（worktree 创建失败）';\n\nfunction shellSingleQuote(v) {\n  return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nfunction buildCommentCommand(commentText, tmpSuffix) {\n  if (!/^\\d+$/.test(bugId)) return 'echo \"STATUS=COMMENT_SKIPPED\"';\n  const tmp = '/tmp/zentao-' + tmpSuffix + '-' + bugId + '.txt';\n  return [\n    'echo ' + shellSingleQuote(commentText) + ' > ' + tmp,\n    'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile) +\n      ' python3 /root/.claude/skills/zc-bug-fix/scripts/bugfix_flow.py zentao-comment ' +\n      shellSingleQuote(bugId) + ' ' + tmp + ' 2>/dev/null || true',\n    'rm -f ' + tmp,\n    'rm -f ' + shellSingleQuote(credFile),   // ← 清理凭据文件\n    'echo \"STATUS=COMMENT_DONE\"'\n  ].join('\\n');\n}\n\nreturn {\n  bugId,\n  isSuccess: false,\n  summary,\n  successCommentCommand: '',\n  failCommentCommand: buildCommentCommand('❌ 环境准备失败：' + summary, 'setup-fail'),\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        400
+      ],
+      "id": "aab00004-0000-0000-0000-000000000001",
+      "name": "准备失败处理"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n//  Project Config  --  add / remove projects here\n//\n//  Columns:\n//    [0] ZenTao project name  (body.project / body.projectName)\n//    [1] Absolute repo path on the server\n//    [2] GitLab project numeric ID\n//    [3] MR assignee username  (empty => defaults.projectOwner)\n//    [4] Base branch           (empty => defaults.targetBranch)\n//    [5] ZenTao product ID     (number inside body.product, e.g. \",52,\" => \"52\")\n//\n//  At least one of [0] or [5] must be filled per row.\n// ===========================================================================\n\n//         [0] name                  [1] repo path                             [2] glId  [3] owner  [4] branch   [5] productId\nconst table = [\n  [\"power_quality_module\", \"/root/git/power_quality_module\", \"799\", \"wangrui\", \"develop\", \"52\"],\n  // [\"proj-b\",            \"/root/git/proj-b\",               \"15\", \"\",      \"main\",    \"10\"],\n];\n\nconst defaults = {\n  projectOwner: \"developer\",\n  targetBranch: \"develop\",\n  worktreeBase: \"/tmp/n8n-worktrees\",\n};\n\n// --- generated maps (do not edit) ---\nconst projects     = {};\nconst productIdMap = {};\n\nfor (const [name, repoPath, gitlabProjectId, projectOwner, targetBranch, productId] of table) {\n  const entry = {\n    repoPath,\n    gitlabProjectId,\n    projectOwner: projectOwner || undefined,\n    targetBranch: targetBranch || undefined,\n    displayName:  name || undefined,\n  };\n  if (name)      projects[name]                         = entry;\n  if (productId) productIdMap[String(productId).trim()] = entry;\n}\n\nreturn {\n  ...$input.item.json,\n  _config: { projects, productIdMap, defaults },\n};"
+      },
+      "name": "📋 项目配置",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        16
+      ],
+      "id": "29469a9f-450a-4c1c-b592-2b869848afb1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n//  [密钥配置] 密钥配置 — 服务地址 & 凭据\n//  ⚠️  此节点含明文密码，请勿将工作流导出后公开分享\n//  -> 修改后点击右上角\"保存\"即可生效，无需重启 n8n\n// ======================\n\nconst secrets = {\n  // 禅道\n  zentaoUrl:      \"http://172.17.0.100:9191/zentao\",\n  zentaoAccount:  \"wangrui\",\n  zentaoPassword: \"Zc123456\",\n  // GitLab\n  gitlabUrl:      \"http://172.17.0.100:8080\",\n  gitlabToken:    \"71XpJFW6PQzqwmXbvUZE\",\n};\n\n// 透传上游数据，附加密钥\nreturn {\n  ...$input.item.json,\n  _secrets: secrets,\n};"
+      },
+      "name": "🔑 密钥配置",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "7d5f1c40-4a2e-4b14-b0a0-6d155f25b798"
+    },
+    {
+      "parameters": {
+        "command": "={{ $('准备执行').item.json.pushCommand }}"
+      },
+      "id": "ea2ceb5e-e326-48de-ac93-d14a67f3f64e",
+      "name": "推送分支",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2720,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ $('准备执行').item.json.createIssueCommand }}"
+      },
+      "id": "d1bc59a5-b60e-43d0-80d7-0c123749f623",
+      "name": "创建 Issue",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2864,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ $('准备执行').item.json.createMrCommand }}"
+      },
+      "id": "49d2dbf2-1c1e-45dd-910b-b4948bdf9bb3",
+      "name": "创建 MR",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3024,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const BUG_TYPES = [\n  \"需求不清问题\", \"需求错误问题\",\n  \"设计_系统整体设计问题\", \"设计_功能间接口问题\", \"设计_功能交互问题\",\n  \"设计_边界值设计问题\", \"设计_流程逻辑设计问题\", \"设计_算法设计问题\",\n  \"编码_流程逻辑实现问题\", \"编码_编程规范语法问题\", \"编码_编程规范内存问题\",\n  \"编码_编程规范初始化\", \"编码_编程规范函数用错\", \"编码_编程规范指针调用\",\n  \"编码_代码合并问题\", \"编码_模块间接口问题\", \"编码_库使用问题\", \"编码_库修改问题\",\n  \"编码-内核保护机制问题\"\n];\n\n// Parse MR description from 创建 MR output\nconst mrStdout  = String($('创建 MR').item?.json?.stdout || '');\nconst mrJsonEnd = mrStdout.lastIndexOf('\\nMR_EXIT=');\nconst mrJsonStr = mrJsonEnd > 0 ? mrStdout.substring(0, mrJsonEnd).trim() : mrStdout.trim();\nlet mrTitle = '', mrDesc = '';\ntry {\n  const mr = JSON.parse(mrJsonStr);\n  mrTitle = mr.title       || '';\n  mrDesc  = mr.description || '';\n} catch(e) {\n  mrDesc = mrStdout.slice(0, 2000);\n}\n\nconst classifyPrompt =\n  \"你是缺陷分类专家。根据bug修复描述，从给定列表中选择最合适的缺陷类型。\\n\" +\n  \"严格按以下格式输出一行，不要任何其他文字：CLASSIFIED_BUG_TYPE=<类型名称>\\n\\n\" +\n  \"可选类型（只能选其中一个）：\\n\" + BUG_TYPES.join(\"\\n\") +\n  \"\\n\\n修复标题：\" + mrTitle +\n  \"\\n\\n修复描述：\\n\" + mrDesc.slice(0, 2000);\n\nreturn { classifyPrompt };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        0
+      ],
+      "id": "f6cbe670-538f-4b71-93aa-6df064f22e33",
+      "name": "准备BugType分类",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.classifyPrompt }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        3360,
+        0
+      ],
+      "id": "99dc0396-dc5f-4bc1-b01c-95519e91e6e4",
+      "name": "AI分类BugType"
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI分类BugType (LLM Chain) outputs { text: \"CLASSIFIED_BUG_TYPE=xxx\" }\nconst raw = String($input.item.json.text || $input.item.json.stdout || '').trim();\n\nconst BUG_TYPES = [\n  \"需求不清问题\", \"需求错误问题\",\n  \"设计_系统整体设计问题\", \"设计_功能间接口问题\", \"设计_功能交互问题\",\n  \"设计_边界值设计问题\", \"设计_流程逻辑设计问题\", \"设计_算法设计问题\",\n  \"编码_流程逻辑实现问题\", \"编码_编程规范语法问题\", \"编码_编程规范内存问题\",\n  \"编码_编程规范初始化\", \"编码_编程规范函数用错\", \"编码_编程规范指针调用\",\n  \"编码_代码合并问题\", \"编码_模块间接口问题\", \"编码_库使用问题\", \"编码_库修改问题\",\n  \"编码-内核保护机制问题\"\n];\nconst FALLBACK = '编码_流程逻辑实现问题';\n\n// Try CLASSIFIED_BUG_TYPE= prefix, then direct match, then substring, then fallback\nconst prefixMatch = raw.match(/^CLASSIFIED_BUG_TYPE=(.*)$/m);\nconst candidate   = prefixMatch ? prefixMatch[1].trim() : raw;\n\nconst classifiedBugType =\n  (BUG_TYPES.includes(candidate) ? candidate : null) ||\n  BUG_TYPES.find(t => candidate.includes(t))         ||\n  FALLBACK;\n\nreturn {\n  classifiedBugType,\n  rawAiResponse: raw.slice(0, 200),\n  classificationFailed: !BUG_TYPES.includes(classifiedBugType),\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3664,
+        0
+      ],
+      "id": "8a98c61b-2ef5-4f14-8272-adad83ec4f4e",
+      "name": "提取BugType",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "deepseek-r1:32b",
+          "mode": "list",
+          "cachedResultName": "deepseek-r1:32b"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        3424,
+        320
+      ],
+      "id": "cbd3562b-d3de-41d6-983c-064cbbd99a9c",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "dxzd7mUzz9W8S5Ff",
+          "name": "ollama"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================================================\n//  AI引擎 — 切换 AI 执行引擎\n//  修改 AI_PROVIDER 即可切换，无需碰其他节点\n//  \"claude\"  ->  Claude Code 节点（默认）\n//  \"codex\"   ->  Codex 执行命令节点\n// ======================================================\n\nconst AI_PROVIDER = \"claude\";   // <- 在这里切换引擎\n\nreturn {\n  ...$input.item.json,\n  _aiProvider: AI_PROVIDER,\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        0
+      ],
+      "id": "38362735-3370-459c-adea-75e47f3cabf7",
+      "name": "⚙️ AI引擎"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "40436336-6d25-47ac-8a5f-5426167784eb",
+              "leftValue": "={{ $('⚙️ AI引擎').item.json._aiProvider }}",
+              "rightValue": "claude",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1744,
+        0
+      ],
+      "id": "7167e138-0671-4151-9ed7-887f01562126",
+      "name": "⚙️路由AI"
+    },
+    {
+      "parameters": {
+        "command": "={{ $('准备执行').item.json.codexCommand }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        208
+      ],
+      "id": "7c685d05-d093-4d84-b33b-42b2958a8b2d",
+      "name": "Codex执行",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize Claude Code (result field) and Codex (stdout field) to unified aiResult\nconst aiResult = String(\n  $input.item.json.result ||   // Claude Code\n  $input.item.json.stdout ||   // Codex\n  ''\n);\nconst worktreeDir = String($input.item.json.worktreeDir || '');\nconst hasSummary = /^SUMMARY=/m.test(aiResult);\nconst hasFail = /\\bSTATUS=FAIL\\b/.test(aiResult);\n\nfunction shellSingleQuote(v) {\n  return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nconst checkFixCommand = [\n  'cd ' + shellSingleQuote(worktreeDir),\n  'ISSUE_IS_DEFAULT=false',\n  'if [ -f .ai-fix/issue-desc.md ] && grep -q ' + shellSingleQuote('AI-generated fix, see MR for details.') + ' .ai-fix/issue-desc.md 2>/dev/null; then ISSUE_IS_DEFAULT=true; fi',\n  'if [ ' + shellSingleQuote(String(hasSummary)) + ' = true ] && [ ' + shellSingleQuote(String(hasFail)) + ' = false ] && [ \"$ISSUE_IS_DEFAULT\" = false ]; then',\n  '  echo \"STATUS=VALID\"',\n  'else',\n  '  echo \"STATUS=INVALID\"',\n  'fi',\n].join('\\n');\n\nreturn {\n  ...$input.item.json,\n  aiResult,\n  hasSummary,\n  hasFail,\n  checkFixCommand,\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        0
+      ],
+      "id": "e594a6c7-2254-43f4-9f00-ba29f6eb9aa6",
+      "name": "合并AI输出",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gitlab-mr-merged",
+        "options": {}
+      },
+      "id": "e7ecee4d-ddc7-4bc0-8916-32c0ca262905",
+      "name": "Webhook GitLab MR",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        704
+      ],
+      "webhookId": "497542c3-c563-4c1f-be2d-14800633dbb2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "83484cd4-a4a5-40a9-a0ad-0df730de7045",
+              "leftValue": "={{ $json.body?.object_attributes?.action ?? $json.object_attributes?.action ?? '' }}",
+              "rightValue": "merge",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "efe03548-db3c-4cd9-bae8-6df066701aea",
+      "name": "过滤 MR合并",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        112,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// GitLab MR merged webhook payload\nconst body    = $input.item.json.body || $input.item.json;\nconst oa      = body.object_attributes || {};\nconst mrUrl   = oa.url   || '';\nconst mrDesc  = oa.description || '';\nconst projectId = String((body.project || {}).id || '');\n\n// Extract BUG_ID= from MR description\nconst bugIdMatch = mrDesc.match(/^BUG_ID=(\\d+)\\s*$/m);\nconst bugId = bugIdMatch ? bugIdMatch[1].trim() : '';\n\nif (!bugId) {\n  // No BUG_ID found — skip (return flag for downstream IF)\n  return { hasBugId: false, bugId: '', mrUrl, projectId };\n}\n\n// Project config (inlined — keep in sync with 📋 项目配置)\nconst table = [\n  [\"power_quality_module\", \"/root/git/power_quality_module\", \"799\", \"wangrui\", \"develop\", \"52\"],\n];\nconst defaults = { projectOwner: \"developer\" };\n\nlet projectOwner = defaults.projectOwner;\nfor (const [, , glId, owner] of table) {\n  if (glId === projectId && owner) { projectOwner = owner; break; }\n}\n\n// Credential config (inlined — keep in sync with 🔑 密钥配置)\nconst secrets = {\n  zentaoUrl:      \"http://172.17.0.100:9191/zentao\",\n  zentaoAccount:  \"wangrui\",\n  zentaoPassword: \"Zc123456\",\n  gitlabUrl:      \"http://172.17.0.100:8080\",\n  gitlabToken:    \"71XpJFW6PQzqwmXbvUZE\",\n};\n\nconst credFile = `/tmp/n8n-mr-creds-${bugId}.env`;\nconst skillPy  = '/root/.claude/skills/zc-bug-fix/scripts/bugfix_flow.py';\n\nfunction sq(v) { return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\"; }\n\nconst writeCredsCmd = [\n  `printf '%s\\\\n'`,\n  sq(`ZENTAO_URL=${secrets.zentaoUrl}`),\n  sq(`ZENTAO_ACCOUNT=${secrets.zentaoAccount}`),\n  sq(`ZENTAO_PASSWORD=${secrets.zentaoPassword}`),\n  sq(`GITLAB_URL=${secrets.gitlabUrl}`),\n  sq(`GITLAB_TOKEN=${secrets.gitlabToken}`),\n  sq(`PROJECT_OWNER=${projectOwner}`),\n  sq(`GITLAB_PROJECT_ID=${projectId}`),\n  `> ${sq(credFile)}`,\n].join(' ');\n\n// bug_type: pass empty string — already set during premerge-writeback\nconst resolveCmd = [\n  `ZC_BUG_FIX_CONFIG=${sq(credFile)}`,\n  `python3 ${sq(skillPy)}`,\n  `zentao-postmerge-resolve`,\n  sq(bugId),\n  sq(''),   // bug_type empty — already set\n  sq(mrUrl),\n  `2>&1`,\n  `&& echo STATUS=RESOLVE_OK || echo STATUS=RESOLVE_FAIL`,\n].join(' ');\n\nconst cleanupCmd = `rm -f ${sq(credFile)}`;\n\nreturn {\n  hasBugId: true,\n  bugId,\n  mrUrl,\n  projectId,\n  resolveCommand: `${writeCredsCmd}\\n${resolveCmd}\\n${cleanupCmd}`,\n};\n"
+      },
+      "id": "ca68efe3-54a2-4476-9cc5-defb7dc23ee5",
+      "name": "准备MR回调",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "80e12588-43a0-4215-bbed-2607259b0c9f",
+              "leftValue": "={{ $json.hasBugId }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d4eea5f8-b901-46fc-ab51-b36e3d539f73",
+      "name": "有BUG_ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        592,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.resolveCommand }}"
+      },
+      "id": "ce106a11-91f4-4d6f-b0b9-ebef54c06748",
+      "name": "执行已解决",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ $('准备执行').item.json.checkFixCommand }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2384,
+        0
+      ],
+      "id": "3944c440-2b58-4019-900b-8eeda63aef34",
+      "name": "检查修复结果"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid-check-1777515861417",
+              "leftValue": "={{ $json.stdout }}",
+              "rightValue": "STATUS=VALID",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2528,
+        -64
+      ],
+      "id": "valid-if-1777515861417",
+      "name": "修复有效?"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "={{ $('准备执行').item.json.earlyFailCommand }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        256
+      ],
+      "id": "early-fail-1777515861417",
+      "name": "早期失败回写"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "过滤 /ai-fix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "过滤 /ai-fix": {
+      "main": [
+        [
+          {
+            "node": "📋 项目配置",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "准备执行": {
+      "main": [
+        [
+          {
+            "node": "回写处理中",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回写处理中": {
+      "main": [
+        [
+          {
+            "node": "环境准备",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "环境准备": {
+      "main": [
+        [
+          {
+            "node": "检查准备",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "检查准备": {
+      "main": [
+        [
+          {
+            "node": "⚙️路由AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "准备失败处理",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Code": {
+      "main": [
+        [
+          {
+            "node": "合并AI输出",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备失败处理": {
+      "main": [
+        [
+          {
+            "node": "修复成功?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析结果": {
+      "main": [
+        [
+          {
+            "node": "修复成功?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "修复成功?": {
+      "main": [
+        [
+          {
+            "node": "回写成功",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "回写失败",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 项目配置": {
+      "main": [
+        [
+          {
+            "node": "🔑 密钥配置",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔑 密钥配置": {
+      "main": [
+        [
+          {
+            "node": "⚙️ AI引擎",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "推送分支": {
+      "main": [
+        [
+          {
+            "node": "创建 Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "创建 Issue": {
+      "main": [
+        [
+          {
+            "node": "创建 MR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "创建 MR": {
+      "main": [
+        [
+          {
+            "node": "准备BugType分类",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备BugType分类": {
+      "main": [
+        [
+          {
+            "node": "AI分类BugType",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI分类BugType": {
+      "main": [
+        [
+          {
+            "node": "提取BugType",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取BugType": {
+      "main": [
+        [
+          {
+            "node": "解析结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI分类BugType",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ AI引擎": {
+      "main": [
+        [
+          {
+            "node": "准备执行",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️路由AI": {
+      "main": [
+        [
+          {
+            "node": "Claude Code",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Codex执行",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Codex执行": {
+      "main": [
+        [
+          {
+            "node": "合并AI输出",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "合并AI输出": {
+      "main": [
+        [
+          {
+            "node": "检查修复结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook GitLab MR": {
+      "main": [
+        [
+          {
+            "node": "过滤 MR合并",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "过滤 MR合并": {
+      "main": [
+        [
+          {
+            "node": "准备MR回调",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备MR回调": {
+      "main": [
+        [
+          {
+            "node": "有BUG_ID?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "有BUG_ID?": {
+      "main": [
+        [
+          {
+            "node": "执行已解决",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "检查修复结果": {
+      "main": [
+        [
+          {
+            "node": "修复有效?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "修复有效?": {
+      "main": [
+        [
+          {
+            "node": "推送分支",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "早期失败回写",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Shanghai",
+    "executionTimeout": 7200,
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "172.17.0.199:5678",
+            "accept": "*/*",
+            "content-type": "application/json;charset=utf-8",
+            "content-length": "517"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "objectType": "bug",
+            "objectID": "5162",
+            "product": ",52,",
+            "project": "57",
+            "action": "commented",
+            "actor": "wangrui",
+            "date": "2026-05-08 11:52:01",
+            "comment": "/ai-fix",
+            "text": "王瑞评论了Bug [#5162::【电压谐波畸变率超限事件】三相事件同时发生时，断开A相电压，偶现A相事件间隔5分钟后恢复](http://172.17.0.100:9191/zentao/bug-view-5162.html)"
+          },
+          "webhookUrl": "http://172.17.0.199:5678/webhook/e282ca0c-7aee-466e-af79-a2dfaa15af9c",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "versionId": "39eb7a21-b118-46e2-a834-f98954015d6b",
+  "activeVersionId": "39eb7a21-b118-46e2-a834-f98954015d6b",
+  "versionCounter": 229,
+  "triggerCount": 2,
+  "shared": [
+    {
+      "updatedAt": "2025-05-27T08:34:16.124Z",
+      "createdAt": "2025-05-27T08:34:16.124Z",
+      "role": "workflow:owner",
+      "workflowId": "jF5WhH6jDYHVmIGl",
+      "projectId": "obYd6scHm7m4ugcY",
+      "project": {
+        "updatedAt": "2025-04-27T06:04:46.550Z",
+        "createdAt": "2025-04-27T04:28:23.213Z",
+        "id": "obYd6scHm7m4ugcY",
+        "name": "ruiwarn ruiwarn <ruiwarn@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "8705a9c0-d855-44ca-8f7e-12f4c3e91279"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-05-09T02:19:16.464Z",
+    "createdAt": "2026-05-09T02:19:16.464Z",
+    "versionId": "39eb7a21-b118-46e2-a834-f98954015d6b",
+    "workflowId": "jF5WhH6jDYHVmIGl",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "e282ca0c-7aee-466e-af79-a2dfaa15af9c",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -272,
+          16
+        ],
+        "id": "d08cff43-7f85-4983-9749-552426b82a03",
+        "name": "Webhook",
+        "webhookId": "37613d28-5aae-4e29-a888-774211f409a4"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0011",
+                "leftValue": "={{ $json.body.objectType }}",
+                "rightValue": "bug",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              },
+              {
+                "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0012",
+                "leftValue": "={{ $json.body.action }}",
+                "rightValue": "commented",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              },
+              {
+                "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0013",
+                "leftValue": "={{ $json.body.comment || \"\" }}",
+                "rightValue": "/ai-fix",
+                "operator": {
+                  "type": "string",
+                  "operation": "contains"
+                }
+              },
+              {
+                "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0014",
+                "leftValue": "={{ $json.body.actor || \"\" }}",
+                "rightValue": "ai-bot",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEquals"
+                }
+              },
+              {
+                "id": "fcf92ce8-bdc7-4c0d-83b5-9f5c5f7e0015",
+                "leftValue": "={{ $json.body.comment || \"\" }}",
+                "rightValue": "AI处理中",
+                "operator": {
+                  "type": "string",
+                  "operation": "notContains"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -16,
+          0
+        ],
+        "id": "5b38d2ad-e9bc-4b4a-a0e4-08cfc9074a11",
+        "name": "过滤 /ai-fix"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "\nconst bugId      = String($input.item.json.body?.objectID || '').trim();\n\n// ── 解析禅道产品 ID（格式 \",52,\" → \"52\"）───────────────────────────────────\nconst rawProduct    = String($input.item.json.body?.product || '');\nconst productIdMatch = rawProduct.match(/\\d+/);\nconst productId     = productIdMatch ? productIdMatch[0] : '';\n\n// body.project / body.projectName 作为备用键\nconst projectKey = String($input.item.json.body?.project   ||\n                          $input.item.json.body?.projectName || '').trim();\n\n// ── 读取上游配置节点 ─────────────────────────────────────────────────────────\nconst cfg = $input.item.json._config || {};\nconst sec = $input.item.json._secrets || {};\n\nconst projects     = cfg.projects     || {};\nconst productIdMap = cfg.productIdMap || {};\nconst defaults     = cfg.defaults     || {};\n\n// ── 查找项目配置（优先产品ID，回退项目名）───────────────────\nconst projCfg = (productId && productIdMap[productId])\n             || (projectKey && projects[projectKey])\n             || {};\n\nconst resolvedProject = projCfg.displayName || projectKey || ('productId=' + productId) || '未知项目';\n\nconst sourceRepo      = projCfg.repoPath        || '';\nconst gitlabProjectId = projCfg.gitlabProjectId || '';\nconst projectOwner    = projCfg.projectOwner    || defaults.projectOwner || '';\nconst targetBranch    = projCfg.targetBranch    || defaults.targetBranch || 'develop';\nconst worktreeBase    = defaults.worktreeBase   || '/tmp/n8n-worktrees';\nconst worktreeDir     = worktreeBase + '/bugfix-' + bugId;\n\nconst zentaoUrl      = sec.zentaoUrl      || '';\nconst zentaoAccount  = sec.zentaoAccount  || '';\nconst zentaoPassword = sec.zentaoPassword || '';\nconst gitlabUrl      = sec.gitlabUrl      || '';\nconst gitlabToken    = sec.gitlabToken    || '';\n\nconst credFile = '/tmp/n8n-creds-' + bugId + '.env';\nconst bugFile  = worktreeDir + '/.ai-fix/bug.json';\nconst skillPy  = '/root/.claude/skills/zc-bug-fix/scripts/bugfix_flow.py';\n\nfunction shellSingleQuote(v) {\n  return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nfunction buildCreateCredsCmd() {\n  const pairs = [\n    ['ZENTAO_URL',        zentaoUrl],\n    ['ZENTAO_ACCOUNT',    zentaoAccount],\n    ['ZENTAO_PASSWORD',   zentaoPassword],\n    ['GITLAB_URL',        gitlabUrl],\n    ['GITLAB_TOKEN',      gitlabToken],\n    ['GITLAB_PROJECT_ID', gitlabProjectId],\n    ['PROJECT_OWNER',     projectOwner],\n    ['TARGET_BRANCH',     targetBranch],\n    ['ALLOW_GIT_PUSH',    '1'],\n  ];\n  const lines = ['rm -f ' + shellSingleQuote(credFile)];\n  for (const [k, v] of pairs) {\n    lines.push('printf \"%s\\\\n\" ' + shellSingleQuote(k + '=' + v) + ' >> ' + shellSingleQuote(credFile));\n  }\n  return lines.join('\\n');\n}\n\nfunction buildCommentCommand(commentText, tmpSuffix) {\n  if (!/^\\d+$/.test(bugId)) return 'echo \"STATUS=COMMENT_SKIPPED\"';\n  const tmp = '/tmp/zentao-' + tmpSuffix + '-' + bugId + '.txt';\n  return [\n    'echo ' + shellSingleQuote(commentText) + ' > ' + tmp,\n    'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile) +\n      ' python3 ' + skillPy + ' zentao-comment ' +\n      shellSingleQuote(bugId) + ' ' + tmp + ' 2>/dev/null || true',\n    'rm -f ' + tmp,\n    'echo \"STATUS=COMMENT_DONE\"'\n  ].join('\\n');\n}\n\nlet setupLines = [];\nif (!bugId || !/^\\d+$/.test(bugId)) {\n  setupLines = ['echo \"STATUS=FAIL\"', 'echo \"SUMMARY=invalid or missing bug id\"'];\n} else if (!sourceRepo) {\n  const hint = productId\n    ? 'productId=' + productId + ' (body.product=' + rawProduct + ')'\n    : (projectKey ? 'projectKey=' + projectKey : 'no project/product in body');\n  setupLines = [\n    'echo \"STATUS=FAIL\"',\n    'echo \"SUMMARY=no repo configured for ' + hint + '; add it in [[项目配置] 项目配置] node (column [5] for productId)\"',\n  ];\n} else if (!zentaoUrl || !gitlabToken) {\n  setupLines = [\n    'echo \"STATUS=FAIL\"',\n    'echo \"SUMMARY=missing credentials; fill in [[密钥配置] 密钥配置] node\"'\n  ];\n} else {\n  setupLines = [\n    'export ZENTAO_URL='         + shellSingleQuote(zentaoUrl),\n    'export ZENTAO_ACCOUNT='     + shellSingleQuote(zentaoAccount),\n    'export ZENTAO_PASSWORD='    + shellSingleQuote(zentaoPassword),\n    'export GITLAB_URL='         + shellSingleQuote(gitlabUrl),\n    'export GITLAB_TOKEN='       + shellSingleQuote(gitlabToken),\n    'export GITLAB_PROJECT_ID='  + shellSingleQuote(gitlabProjectId),\n    'export PROJECT_OWNER='      + shellSingleQuote(projectOwner),\n    'export TARGET_BRANCH='      + shellSingleQuote(targetBranch),\n    'export ALLOW_GIT_PUSH=1',\n    'CONFIG_FILE=' + shellSingleQuote(sourceRepo + '/.claude/ai-fix.env'),\n    'if [ -f \"$CONFIG_FILE\" ]; then set -a; . \"$CONFIG_FILE\" >/dev/null 2>&1 || true; set +a; fi',\n    'BUG_ID=' + shellSingleQuote(bugId),\n    'WORKTREE_DIR=' + shellSingleQuote(worktreeDir),\n    'SOURCE_REPO=' + shellSingleQuote(sourceRepo),\n    'WORKTREE_BASE=' + shellSingleQuote(worktreeBase),\n    'LOCK_DIR=\"/tmp/ai-fix-bug-${BUG_ID}.lock\"',\n    'if ! mkdir \"$LOCK_DIR\" 2>/dev/null; then',\n    '  echo \"STATUS=FAIL\"',\n    '  echo \"SUMMARY=another ai fix is already running for this bug\"',\n    '  exit 0',\n    'fi',\n    \"trap 'rmdir \\\"$LOCK_DIR\\\" >/dev/null 2>&1' EXIT\",\n    'if [ ! -d \"$SOURCE_REPO/.git\" ]; then echo \"STATUS=FAIL\"; echo \"SUMMARY=source repo missing at $SOURCE_REPO\"; exit 0; fi',\n    'mkdir -p \"$WORKTREE_BASE\"',\n    'if ! git -C \"$SOURCE_REPO\" fetch origin ' + shellSingleQuote(targetBranch) + ' >/dev/null 2>&1; then echo \"STATUS=FAIL\"; echo \"SUMMARY=git fetch origin ' + targetBranch + ' failed\"; exit 0; fi',\n    'git -C \"$SOURCE_REPO\" worktree remove --force \"$WORKTREE_DIR\" >/dev/null 2>&1 || true',\n    'rm -rf \"$WORKTREE_DIR\"',\n    'if ! git -C \"$SOURCE_REPO\" worktree add -B \"bugfix/${BUG_ID}\" \"$WORKTREE_DIR\" \"origin/' + targetBranch + '\" >/dev/null 2>&1; then',\n    '  echo \"STATUS=FAIL\"',\n    '  echo \"SUMMARY=git worktree creation failed\"',\n    '  exit 0',\n    'fi',\n    'echo \"STATUS=SETUP_OK\"',\n    'mkdir -p \"${WORKTREE_DIR}/.ai-fix\"',\n    'echo \".ai-fix/\" >> \"${WORKTREE_DIR}/.gitignore\"',\n    '# 预读取禅道 Bug（ Claude 直接使用）',\n    'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile) + ' python3 ' + shellSingleQuote(skillPy) + ' fetch ' + shellSingleQuote(bugId) +\n      ' > ' + shellSingleQuote(bugFile) + ' 2>&1',\n    'if python3 -c \"import json,sys; d=json.load(open(' + shellSingleQuote(bugFile) + ')); sys.exit(0 if d.get(\\'status\\')==\\'success\\' else 1)\" 2>/dev/null; then',\n    '  echo \"STATUS=BUG_PREFETCHED\"',\n    'else',\n    '  echo \"STATUS=BUG_FETCH_WARN (Claude will re-fetch)\"',\n    'fi',\n  ];\n}\nconst setupCommand = setupLines.join('\\n');\n\nconst credPrefix = 'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile);\nconst issueDescFile = worktreeDir + '/.ai-fix/issue-desc.md';\nconst mrDescFile    = worktreeDir + '/.ai-fix/mr-desc.md';\n\nconst prompt = [\n  '你正在执行 zc-bug-fix skill 的 Server Unattended Mode。',\n  '这是由 n8n 触发的无人值守修复流程，不要向用户提问，不要等待确认。',\n  '',\n  '目标：处理禅道 Bug #' + bugId + '（项目：' + resolvedProject + '）',\n  '工作目录：' + worktreeDir + '（独立 git worktree，已基于 origin/' + targetBranch + ' 创建）',\n  '凭据文件：' + credFile + '（n8n 已写入，不要删除）',\n  '',\n  '▶ Bug 数据已由 n8n 预读取到：' + bugFile,\n  '  格式：{status, zentao_url, bug:{...}}  bug 字段在顶层 bug 对象中，无需二次解析',\n  '  steps 字段含 HTML，图片已是绝对 URL，可直接 WebFetch 获取',\n  '  请先执行：cat ' + bugFile + '  来获取 Bug 详情，无需再调用 fetch 命令。',\n  '  （如果文件读取异常，再用 ' + credPrefix + ' python3 ' + skillPy + ' fetch ' + bugId + ' 作为备用）',\n  '',\n  '▶ 所有 bugfix_flow.py 命令前缀：' + credPrefix,\n  '',\n  '固定执行顺序（严格遵守）：',\n  '1. 读取 ' + bugFile + '   Bug 内容',\n  '2. 分析代码，定位根因，修复代码',\n  '3. 自测验证（运行相关测试，确认通过）',\n  '4. git add <相关文件>（禁止 git add .）',\n  '5. git commit',\n  '6. 读取 Issue 模板：cat $SKILL_DIR/templates/issue_6d_template.md',\n  '   按该模板格式写入 ' + issueDescFile + '，将所有 {{占位符}} 替换为实际内容（必须包含全6个章节，禁止留空占位符）',\n  '7. 读取 MR 模板：cat $SKILL_DIR/templates/mr_template.md',\n  '   按该模板格式写入 ' + mrDescFile + '，将所有 {{占位符}} 替换为实际内容',\n  '   n8n 会自动识别 bug 类型，Claude 无需在文件末尾追加任何额外行。',\n  '   n8n 将自动执行 push-branch / create-issue / create-mr，Claude 无需调用',\n  '',\n  '⚠️ 禁止调用 zentao-premerge-writeback 和 zentao-postmerge-resolve（n8n 自动执行）',\n  '⚠️ 只要验证失败，立即停止，在输出中包含 STATUS=FAIL。',\n  '',\n  '完成后必须在输出末尾（每项单独一行）：',\n  'SUMMARY=<一句话总结>',\n  '(不要输出 ISSUE_URL/MR_URL，n8n 会自动获取)',\n].join('\\n');\n\nconst ackComment = buildCommentCommand(\n  '[AI] AI处理中，自动修复已启动，正在执行 zc-bug-fix 服务器工作流。',\n  'ack'\n);\nconst ackCommand = buildCreateCredsCmd() + '\\n' + ackComment;\n\n\n// ── Push / Issue / MR 命令（在此预构建，Execute Command 节点用 $json.xxx 引用）──\n\nconst pushCommand = [\n  'cd ' + shellSingleQuote(worktreeDir),\n  '# Guard: check if there are actual code changes or new commits',\n  'if [ -z \"$(git status --short)\" ] && [ -z \"$(git log origin/' + targetBranch + '..HEAD --oneline)\" ]; then',\n  '  echo \"STATUS=PUSH_SKIP\"',\n  '  echo \"SUMMARY=no code changes detected, skip push\"',\n  '  exit 0',\n  'fi',\n  'if ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile) +\n    ' python3 ' + shellSingleQuote(skillPy) + ' push-branch 2>&1; then',\n  '  echo \"STATUS=PUSH_OK\"',\n  'else',\n  '  echo \"STATUS=PUSH_FAIL\"',\n  'fi',\n].join('\\n');\n\nconst createIssueCommand = [\n  'CRED=' + shellSingleQuote(credFile),\n  'BUG_ID=' + shellSingleQuote(bugId),\n  'DESC=' + shellSingleQuote(issueDescFile),\n  'if [ ! -f \"$DESC\" ]; then',\n  '  printf \"# Bug #' + bugId + ' AI Fix\\\\n\" > \"$DESC\"',\n  '  printf \"AI-generated fix, see MR for details.\\\\n\" >> \"$DESC\"',\n  'fi',\n  'ZC_BUG_FIX_CONFIG=\"$CRED\" python3 ' + shellSingleQuote(skillPy) +\n    ' create-issue \"$BUG_ID\" \"$DESC\" 2>&1',\n  'echo \"ISSUE_EXIT=$?\"',\n].join('\\n');\n\nconst createMrCommand = [\n  'CRED=' + shellSingleQuote(credFile),\n  'BUG_ID=' + shellSingleQuote(bugId),\n  'BRANCH=\"bugfix/${BUG_ID}\"',\n  'DESC=' + shellSingleQuote(mrDescFile),\n  'if [ ! -f \"$DESC\" ]; then',\n  '  printf \"# Bugfix: Bug #' + bugId + '\\\\n\" > \"$DESC\"',\n  '  printf \"AI-generated fix, see commits for details.\\\\n\" >> \"$DESC\"',\n  'fi',\n  'ZC_BUG_FIX_CONFIG=\"$CRED\" python3 ' + shellSingleQuote(skillPy) +\n    ' create-mr \"$BUG_ID\" \"$BRANCH\" \"$DESC\" 2>&1',\n  'echo \"MR_EXIT=$?\"',\n].join('\\n');\n\nconst earlyFailCommand = [\n  'CRED=' + shellSingleQuote(credFile),\n  'BUG_ID=' + shellSingleQuote(bugId),\n  'SKILL_PY=' + shellSingleQuote(skillPy),\n  'TMP=/tmp/zentao-early-fail-' + bugId + '.txt',\n  'echo ' + shellSingleQuote('AI fix failed: no code changes generated or fix validation failed.') + ' > \"$TMP\"',\n  'ZC_BUG_FIX_CONFIG=\"$CRED\" python3 \"$SKILL_PY\" zentao-comment \"$BUG_ID\" \"$TMP\" 2>/dev/null || true',\n  'rm -f \"$TMP\"',\n  'echo \"STATUS=EARLY_FAIL_DONE\"',\n].join('\\n');\n\n\n\n\n\nconst claudeCommand = (setupLines.length && !setupLines[0].includes('STATUS=FAIL'))\n  ? [\n      'cd ' + shellSingleQuote(worktreeDir),\n      \"printf '%s' \" + shellSingleQuote(prompt) + ' | claude --print --settings /root/.claude/skills/zc-bug-fix/n8n-settings.json 2>&1',\n    ].join('\\n')\n  : 'echo STATUS=FAIL && echo SUMMARY=setup failed, claude not started';\n\n// codexCommand for Codex执行 node (same prompt, Codex CLI)\nconst promptFile   = worktreeDir + '/.ai-fix/codex-prompt.txt';\nconst codexCommand = (setupLines.length && !setupLines[0].includes('STATUS=FAIL'))\n  ? [\n      'printf \\'%s\\' ' + shellSingleQuote(prompt) + ' > ' + shellSingleQuote(promptFile),\n      'cd ' + shellSingleQuote(worktreeDir),\n      'codex --full-auto < ' + shellSingleQuote(promptFile),\n      'CODE=$?',\n      'rm -f ' + shellSingleQuote(promptFile),\n      'exit $CODE',\n    ].join('\\n')\n  : 'echo STATUS=FAIL && echo SUMMARY=setup failed, codex not started';\n\nconst checkFixCommand = (setupLines.length && !setupLines[0].includes('STATUS=FAIL'))\n  ? [\n      'cd ' + shellSingleQuote(worktreeDir),\n      'if git log origin/' + targetBranch + '..HEAD --oneline 2>/dev/null | grep -q .; then',\n      '  echo \"STATUS=VALID\"',\n      '  echo \"SUMMARY=code changes detected\"',\n      'elif [ -n \"$(git status --short 2>/dev/null)\" ]; then',\n      '  echo \"STATUS=VALID\"',\n      '  echo \"SUMMARY=uncommitted changes detected\"',\n      'else',\n      '  echo \"STATUS=INVALID\"',\n      '  echo \"SUMMARY=no code changes in worktree\"',\n      'fi',\n    ].join('\\n')\n  : 'echo \"STATUS=INVALID\" && echo \"SUMMARY=setup failed\"';\n\nreturn {\n  claudeCommand,\n  checkFixCommand,\n  codexCommand,\n  earlyFailCommand,\n  bugId,\n  productId,\n  projectKey,\n  resolvedProject,\n  sourceRepo,\n  worktreeDir,\n  credFile,\n  bugFile,\n  ackCommand,\n  setupCommand,\n  prompt,\n  pushCommand,\n  createIssueCommand,\n  createMrCommand,\n};\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          832,
+          0
+        ],
+        "id": "0af7dceb-a7f1-4b6d-84ba-e4f26e831021",
+        "name": "准备执行"
+      },
+      {
+        "parameters": {
+          "command": "={{ $json.ackCommand }}"
+        },
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          1024,
+          0
+        ],
+        "id": "b163f2e0-4de0-4a73-a36d-d76c126b5021",
+        "name": "回写处理中"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const bugId    = String($('准备执行').item.json.bugId    || '').trim();\nconst credFile = String($('准备执行').item.json.credFile || '');\nconst skillPy  = '/root/.claude/skills/zc-bug-fix/scripts/bugfix_flow.py';\n\n// AI output — unified via 合并AI输出 node\nconst claudeOutput = String($('合并AI输出').item?.json?.aiResult || '');\nconst summaryMatch = claudeOutput.match(/^SUMMARY=(.*)$/m);\nconst summary      = summaryMatch ? summaryMatch[1].trim() : 'AI修复流程执行完成';\n\n// Issue URL — parse web_url from GitLab API JSON\nconst issueStdout = String($('创建 Issue').item?.json?.stdout || '');\nlet issueUrl = '';\ntry {\n  const issueEnd = issueStdout.lastIndexOf('\\nISSUE_EXIT=');\n  const issueStr = issueEnd > 0 ? issueStdout.substring(0, issueEnd).trim() : issueStdout.trim();\n  issueUrl = JSON.parse(issueStr).web_url || '';\n} catch(e) {\n  const m = issueStdout.match(/\"web_url\"\\s*:\\s*\"([^\"]+)\"/);\n  issueUrl = m ? m[1] : '';\n}\n\n// MR URL — parse web_url from GitLab API JSON\nconst mrStdout = String($('创建 MR').item?.json?.stdout || '');\nlet mrUrl = '';\ntry {\n  const mrEnd = mrStdout.lastIndexOf('\\nMR_EXIT=');\n  const mrStr = mrEnd > 0 ? mrStdout.substring(0, mrEnd).trim() : mrStdout.trim();\n  mrUrl = JSON.parse(mrStr).web_url || '';\n} catch(e) {\n  const m = mrStdout.match(/\"web_url\"\\s*:\\s*\"([^\"]+)\"/);\n  mrUrl = m ? m[1] : '';\n}\n\n// BUG_TYPE — from OpenAI LLM classification node\nconst ALLOWED_BUG_TYPES = [\n  \"需求不清问题\", \"需求错误问题\",\n  \"设计_系统整体设计问题\", \"设计_功能间接口问题\", \"设计_功能交互问题\",\n  \"设计_边界值设计问题\", \"设计_流程逻辑设计问题\", \"设计_算法设计问题\",\n  \"编码_流程逻辑实现问题\", \"编码_编程规范语法问题\", \"编码_编程规范内存问题\",\n  \"编码_编程规范初始化\", \"编码_编程规范函数用错\", \"编码_编程规范指针调用\",\n  \"编码_代码合并问题\", \"编码_模块间接口问题\", \"编码_库使用问题\", \"编码_库修改问题\",\n  \"编码-内核保护机制问题\"\n];\nconst FALLBACK_BUG_TYPE = '编码_流程逻辑实现问题';\nconst rawClassified = String($('提取BugType').item?.json?.classifiedBugType || '');\nconst bugType      = ALLOWED_BUG_TYPES.includes(rawClassified) ? rawClassified : FALLBACK_BUG_TYPE;\nconst bugTypeValid = ALLOWED_BUG_TYPES.includes(rawClassified);\n\n// isSuccess\nconst pushOut = String($('推送分支').item?.json?.stdout || '');\nconst pushOk  = !pushOut.includes('STATUS=PUSH_FAIL');\nconst isSuccess = !!summaryMatch\n  && !/\\bSTATUS=FAIL\\b/.test(claudeOutput)\n  && pushOk;\n\nfunction shellSingleQuote(v) {\n  return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nfunction buildSuccessCommand() {\n  if (!/^\\d+$/.test(bugId)) return 'echo \"STATUS=COMMENT_SKIPPED\"';\n  const credPrefix = 'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile);\n  if (mrUrl) {\n    const parts = [\n      credPrefix + ' python3 ' + skillPy +\n        ' zentao-premerge-writeback ' +\n        shellSingleQuote(bugId) + ' ' +\n        shellSingleQuote(bugType) + ' ' +\n        shellSingleQuote(issueUrl || '') + ' ' +\n        shellSingleQuote(mrUrl),\n    ];\n    if (!bugTypeValid) {\n      const warnFile = '/tmp/zentao-warn-' + bugId + '.txt';\n      parts.push(\n        'echo ' + shellSingleQuote('BUG_TYPE fallback: ' + bugType) + ' > ' + warnFile,\n        credPrefix + ' python3 ' + skillPy + ' zentao-comment ' +\n          shellSingleQuote(bugId) + ' ' + warnFile + ' 2>/dev/null || true',\n        'rm -f ' + warnFile,\n      );\n    }\n    parts.push('rm -f ' + shellSingleQuote(credFile), 'echo \"STATUS=WRITEBACK_DONE\"');\n    return parts.join('\\n');\n  } else {\n    const tmp = '/tmp/zentao-result-' + bugId + '.txt';\n    return [\n      'echo ' + shellSingleQuote('AI fix done (no MR created, check manually): ' + summary) + ' > ' + tmp,\n      credPrefix + ' python3 ' + skillPy + ' zentao-comment ' +\n        shellSingleQuote(bugId) + ' ' + tmp + ' 2>/dev/null || true',\n      'rm -f ' + tmp, 'rm -f ' + shellSingleQuote(credFile), 'echo \"STATUS=COMMENT_DONE\"',\n    ].join('\\n');\n  }\n}\n\nfunction buildFailCommand() {\n  if (!/^\\d+$/.test(bugId)) return 'echo \"STATUS=COMMENT_SKIPPED\"';\n  const credPrefix = 'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile);\n  const tmp = '/tmp/zentao-result-' + bugId + '.txt';\n  let msg = 'AI fix failed: ' + summary;\n  if (mrUrl) msg += '\\nMR created: ' + mrUrl;\n  return [\n    'echo ' + shellSingleQuote(msg) + ' > ' + tmp,\n    credPrefix + ' python3 ' + skillPy + ' zentao-comment ' +\n      shellSingleQuote(bugId) + ' ' + tmp + ' 2>/dev/null || true',\n    'rm -f ' + tmp, 'rm -f ' + shellSingleQuote(credFile), 'echo \"STATUS=COMMENT_DONE\"',\n  ].join('\\n');\n}\n\nreturn {\n  bugId, isSuccess, summary, issueUrl, mrUrl, bugType, bugTypeValid,\n  successCommentCommand: buildSuccessCommand(),\n  failCommentCommand:    buildFailCommand(),\n  rawOutput: claudeOutput.slice(0, 2000),\n};\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3904,
+          0
+        ],
+        "id": "79e20ac5-3cde-40cd-a791-4e95f8e6f041",
+        "name": "解析结果"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "a14ac7f0-1c87-4fa4-a905-3d5715d6b051",
+                "leftValue": "={{ $json.isSuccess }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          4144,
+          0
+        ],
+        "id": "5817469e-66ce-4a3a-a9f7-48e9cb979041",
+        "name": "修复成功?"
+      },
+      {
+        "parameters": {
+          "command": "={{ $json.successCommentCommand }}"
+        },
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          4384,
+          -128
+        ],
+        "id": "a1bbbf0c-cc2c-4809-b2e8-6c2819179071",
+        "name": "回写成功"
+      },
+      {
+        "parameters": {
+          "command": "={{ $json.failCommentCommand }}"
+        },
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          4384,
+          128
+        ],
+        "id": "b2c0cdd3-df2d-4d93-9ed9-0c57c7033072",
+        "name": "回写失败"
+      },
+      {
+        "parameters": {
+          "executeOnce": false,
+          "command": "={{ $('准备执行').item.json.claudeCommand }}"
+        },
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          2000,
+          -208
+        ],
+        "id": "ee85f6a2-ccec-44d3-aab1-b2437f1a0c7b",
+        "name": "Claude Code"
+      },
+      {
+        "parameters": {
+          "command": "={{ $('准备执行').item.json.setupCommand }}"
+        },
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          1264,
+          0
+        ],
+        "id": "aab00001-0000-0000-0000-000000000001",
+        "name": "环境准备"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "aab00002-0000-0000-0000-000000000001",
+                "leftValue": "={{ $json.stdout }}",
+                "rightValue": "STATUS=SETUP_OK",
+                "operator": {
+                  "type": "string",
+                  "operation": "contains"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1504,
+          0
+        ],
+        "id": "aab00003-0000-0000-0000-000000000001",
+        "name": "检查准备"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const stdout   = String($input.item.json.stdout || '');\nconst bugId    = String($('准备执行').item.json.bugId    || '').trim();\nconst credFile = String($('准备执行').item.json.credFile || '');\n\nconst summaryMatch = stdout.match(/^SUMMARY=(.*)$/m);\nconst summary = summaryMatch ? summaryMatch[1].trim() : '环境准备失败（worktree 创建失败）';\n\nfunction shellSingleQuote(v) {\n  return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nfunction buildCommentCommand(commentText, tmpSuffix) {\n  if (!/^\\d+$/.test(bugId)) return 'echo \"STATUS=COMMENT_SKIPPED\"';\n  const tmp = '/tmp/zentao-' + tmpSuffix + '-' + bugId + '.txt';\n  return [\n    'echo ' + shellSingleQuote(commentText) + ' > ' + tmp,\n    'ZC_BUG_FIX_CONFIG=' + shellSingleQuote(credFile) +\n      ' python3 /root/.claude/skills/zc-bug-fix/scripts/bugfix_flow.py zentao-comment ' +\n      shellSingleQuote(bugId) + ' ' + tmp + ' 2>/dev/null || true',\n    'rm -f ' + tmp,\n    'rm -f ' + shellSingleQuote(credFile),   // ← 清理凭据文件\n    'echo \"STATUS=COMMENT_DONE\"'\n  ].join('\\n');\n}\n\nreturn {\n  bugId,\n  isSuccess: false,\n  summary,\n  successCommentCommand: '',\n  failCommentCommand: buildCommentCommand('❌ 环境准备失败：' + summary, 'setup-fail'),\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2000,
+          400
+        ],
+        "id": "aab00004-0000-0000-0000-000000000001",
+        "name": "准备失败处理"
+      },
+      {
+        "parameters": {
+          "jsCode": "// ===========================================================================\n//  Project Config  --  add / remove projects here\n//\n//  Columns:\n//    [0] ZenTao project name  (body.project / body.projectName)\n//    [1] Absolute repo path on the server\n//    [2] GitLab project numeric ID\n//    [3] MR assignee username  (empty => defaults.projectOwner)\n//    [4] Base branch           (empty => defaults.targetBranch)\n//    [5] ZenTao product ID     (number inside body.product, e.g. \",52,\" => \"52\")\n//\n//  At least one of [0] or [5] must be filled per row.\n// ===========================================================================\n\n//         [0] name                  [1] repo path                             [2] glId  [3] owner  [4] branch   [5] productId\nconst table = [\n  [\"power_quality_module\", \"/root/git/power_quality_module\", \"799\", \"wangrui\", \"develop\", \"52\"],\n  // [\"proj-b\",            \"/root/git/proj-b\",               \"15\", \"\",      \"main\",    \"10\"],\n];\n\nconst defaults = {\n  projectOwner: \"developer\",\n  targetBranch: \"develop\",\n  worktreeBase: \"/tmp/n8n-worktrees\",\n};\n\n// --- generated maps (do not edit) ---\nconst projects     = {};\nconst productIdMap = {};\n\nfor (const [name, repoPath, gitlabProjectId, projectOwner, targetBranch, productId] of table) {\n  const entry = {\n    repoPath,\n    gitlabProjectId,\n    projectOwner: projectOwner || undefined,\n    targetBranch: targetBranch || undefined,\n    displayName:  name || undefined,\n  };\n  if (name)      projects[name]                         = entry;\n  if (productId) productIdMap[String(productId).trim()] = entry;\n}\n\nreturn {\n  ...$input.item.json,\n  _config: { projects, productIdMap, defaults },\n};"
+        },
+        "name": "📋 项目配置",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          16
+        ],
+        "id": "29469a9f-450a-4c1c-b592-2b869848afb1"
+      },
+      {
+        "parameters": {
+          "jsCode": "// ======================\n//  [密钥配置] 密钥配置 — 服务地址 & 凭据\n//  ⚠️  此节点含明文密码，请勿将工作流导出后公开分享\n//  -> 修改后点击右上角\"保存\"即可生效，无需重启 n8n\n// ======================\n\nconst secrets = {\n  // 禅道\n  zentaoUrl:      \"http://172.17.0.100:9191/zentao\",\n  zentaoAccount:  \"wangrui\",\n  zentaoPassword: \"Zc123456\",\n  // GitLab\n  gitlabUrl:      \"http://172.17.0.100:8080\",\n  gitlabToken:    \"71XpJFW6PQzqwmXbvUZE\",\n};\n\n// 透传上游数据，附加密钥\nreturn {\n  ...$input.item.json,\n  _secrets: secrets,\n};"
+        },
+        "name": "🔑 密钥配置",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          448,
+          0
+        ],
+        "id": "7d5f1c40-4a2e-4b14-b0a0-6d155f25b798"
+      },
+      {
+        "parameters": {
+          "command": "={{ $('准备执行').item.json.pushCommand }}"
+        },
+        "id": "ea2ceb5e-e326-48de-ac93-d14a67f3f64e",
+        "name": "推送分支",
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          2720,
+          -64
+        ]
+      },
+      {
+        "parameters": {
+          "command": "={{ $('准备执行').item.json.createIssueCommand }}"
+        },
+        "id": "d1bc59a5-b60e-43d0-80d7-0c123749f623",
+        "name": "创建 Issue",
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          2864,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "command": "={{ $('准备执行').item.json.createMrCommand }}"
+        },
+        "id": "49d2dbf2-1c1e-45dd-910b-b4948bdf9bb3",
+        "name": "创建 MR",
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          3024,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const BUG_TYPES = [\n  \"需求不清问题\", \"需求错误问题\",\n  \"设计_系统整体设计问题\", \"设计_功能间接口问题\", \"设计_功能交互问题\",\n  \"设计_边界值设计问题\", \"设计_流程逻辑设计问题\", \"设计_算法设计问题\",\n  \"编码_流程逻辑实现问题\", \"编码_编程规范语法问题\", \"编码_编程规范内存问题\",\n  \"编码_编程规范初始化\", \"编码_编程规范函数用错\", \"编码_编程规范指针调用\",\n  \"编码_代码合并问题\", \"编码_模块间接口问题\", \"编码_库使用问题\", \"编码_库修改问题\",\n  \"编码-内核保护机制问题\"\n];\n\n// Parse MR description from 创建 MR output\nconst mrStdout  = String($('创建 MR').item?.json?.stdout || '');\nconst mrJsonEnd = mrStdout.lastIndexOf('\\nMR_EXIT=');\nconst mrJsonStr = mrJsonEnd > 0 ? mrStdout.substring(0, mrJsonEnd).trim() : mrStdout.trim();\nlet mrTitle = '', mrDesc = '';\ntry {\n  const mr = JSON.parse(mrJsonStr);\n  mrTitle = mr.title       || '';\n  mrDesc  = mr.description || '';\n} catch(e) {\n  mrDesc = mrStdout.slice(0, 2000);\n}\n\nconst classifyPrompt =\n  \"你是缺陷分类专家。根据bug修复描述，从给定列表中选择最合适的缺陷类型。\\n\" +\n  \"严格按以下格式输出一行，不要任何其他文字：CLASSIFIED_BUG_TYPE=<类型名称>\\n\\n\" +\n  \"可选类型（只能选其中一个）：\\n\" + BUG_TYPES.join(\"\\n\") +\n  \"\\n\\n修复标题：\" + mrTitle +\n  \"\\n\\n修复描述：\\n\" + mrDesc.slice(0, 2000);\n\nreturn { classifyPrompt };\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3184,
+          0
+        ],
+        "id": "f6cbe670-538f-4b71-93aa-6df064f22e33",
+        "name": "准备BugType分类",
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ $json.classifyPrompt }}"
+        },
+        "type": "@n8n/n8n-nodes-langchain.chainLlm",
+        "typeVersion": 1.4,
+        "position": [
+          3360,
+          0
+        ],
+        "id": "99dc0396-dc5f-4bc1-b01c-95519e91e6e4",
+        "name": "AI分类BugType"
+      },
+      {
+        "parameters": {
+          "jsCode": "// AI分类BugType (LLM Chain) outputs { text: \"CLASSIFIED_BUG_TYPE=xxx\" }\nconst raw = String($input.item.json.text || $input.item.json.stdout || '').trim();\n\nconst BUG_TYPES = [\n  \"需求不清问题\", \"需求错误问题\",\n  \"设计_系统整体设计问题\", \"设计_功能间接口问题\", \"设计_功能交互问题\",\n  \"设计_边界值设计问题\", \"设计_流程逻辑设计问题\", \"设计_算法设计问题\",\n  \"编码_流程逻辑实现问题\", \"编码_编程规范语法问题\", \"编码_编程规范内存问题\",\n  \"编码_编程规范初始化\", \"编码_编程规范函数用错\", \"编码_编程规范指针调用\",\n  \"编码_代码合并问题\", \"编码_模块间接口问题\", \"编码_库使用问题\", \"编码_库修改问题\",\n  \"编码-内核保护机制问题\"\n];\nconst FALLBACK = '编码_流程逻辑实现问题';\n\n// Try CLASSIFIED_BUG_TYPE= prefix, then direct match, then substring, then fallback\nconst prefixMatch = raw.match(/^CLASSIFIED_BUG_TYPE=(.*)$/m);\nconst candidate   = prefixMatch ? prefixMatch[1].trim() : raw;\n\nconst classifiedBugType =\n  (BUG_TYPES.includes(candidate) ? candidate : null) ||\n  BUG_TYPES.find(t => candidate.includes(t))         ||\n  FALLBACK;\n\nreturn {\n  classifiedBugType,\n  rawAiResponse: raw.slice(0, 200),\n  classificationFailed: !BUG_TYPES.includes(classifiedBugType),\n};\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3664,
+          0
+        ],
+        "id": "8a98c61b-2ef5-4f14-8272-adad83ec4f4e",
+        "name": "提取BugType",
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "value": "deepseek-r1:32b",
+            "mode": "list",
+            "cachedResultName": "deepseek-r1:32b"
+          },
+          "responsesApiEnabled": false,
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.3,
+        "position": [
+          3424,
+          320
+        ],
+        "id": "cbd3562b-d3de-41d6-983c-064cbbd99a9c",
+        "name": "OpenAI Chat Model",
+        "credentials": {
+          "openAiApi": {
+            "id": "dxzd7mUzz9W8S5Ff",
+            "name": "ollama"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// ======================================================\n//  AI引擎 — 切换 AI 执行引擎\n//  修改 AI_PROVIDER 即可切换，无需碰其他节点\n//  \"claude\"  ->  Claude Code 节点（默认）\n//  \"codex\"   ->  Codex 执行命令节点\n// ======================================================\n\nconst AI_PROVIDER = \"claude\";   // <- 在这里切换引擎\n\nreturn {\n  ...$input.item.json,\n  _aiProvider: AI_PROVIDER,\n};\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          608,
+          0
+        ],
+        "id": "38362735-3370-459c-adea-75e47f3cabf7",
+        "name": "⚙️ AI引擎"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "40436336-6d25-47ac-8a5f-5426167784eb",
+                "leftValue": "={{ $('⚙️ AI引擎').item.json._aiProvider }}",
+                "rightValue": "claude",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1744,
+          0
+        ],
+        "id": "7167e138-0671-4151-9ed7-887f01562126",
+        "name": "⚙️路由AI"
+      },
+      {
+        "parameters": {
+          "command": "={{ $('准备执行').item.json.codexCommand }}"
+        },
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          2000,
+          208
+        ],
+        "id": "7c685d05-d093-4d84-b33b-42b2958a8b2d",
+        "name": "Codex执行",
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "jsCode": "// Normalize Claude Code (result field) and Codex (stdout field) to unified aiResult\nconst aiResult = String(\n  $input.item.json.result ||   // Claude Code\n  $input.item.json.stdout ||   // Codex\n  ''\n);\nconst worktreeDir = String($input.item.json.worktreeDir || '');\nconst hasSummary = /^SUMMARY=/m.test(aiResult);\nconst hasFail = /\\bSTATUS=FAIL\\b/.test(aiResult);\n\nfunction shellSingleQuote(v) {\n  return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nconst checkFixCommand = [\n  'cd ' + shellSingleQuote(worktreeDir),\n  'ISSUE_IS_DEFAULT=false',\n  'if [ -f .ai-fix/issue-desc.md ] && grep -q ' + shellSingleQuote('AI-generated fix, see MR for details.') + ' .ai-fix/issue-desc.md 2>/dev/null; then ISSUE_IS_DEFAULT=true; fi',\n  'if [ ' + shellSingleQuote(String(hasSummary)) + ' = true ] && [ ' + shellSingleQuote(String(hasFail)) + ' = false ] && [ \"$ISSUE_IS_DEFAULT\" = false ]; then',\n  '  echo \"STATUS=VALID\"',\n  'else',\n  '  echo \"STATUS=INVALID\"',\n  'fi',\n].join('\\n');\n\nreturn {\n  ...$input.item.json,\n  aiResult,\n  hasSummary,\n  hasFail,\n  checkFixCommand,\n};\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2240,
+          0
+        ],
+        "id": "e594a6c7-2254-43f4-9f00-ba29f6eb9aa6",
+        "name": "合并AI输出",
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "gitlab-mr-merged",
+          "options": {}
+        },
+        "id": "e7ecee4d-ddc7-4bc0-8916-32c0ca262905",
+        "name": "Webhook GitLab MR",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -160,
+          704
+        ],
+        "webhookId": "497542c3-c563-4c1f-be2d-14800633dbb2"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "83484cd4-a4a5-40a9-a0ad-0df730de7045",
+                "leftValue": "={{ $json.body?.object_attributes?.action ?? $json.object_attributes?.action ?? '' }}",
+                "rightValue": "merge",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "efe03548-db3c-4cd9-bae8-6df066701aea",
+        "name": "过滤 MR合并",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          112,
+          704
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// GitLab MR merged webhook payload\nconst body    = $input.item.json.body || $input.item.json;\nconst oa      = body.object_attributes || {};\nconst mrUrl   = oa.url   || '';\nconst mrDesc  = oa.description || '';\nconst projectId = String((body.project || {}).id || '');\n\n// Extract BUG_ID= from MR description\nconst bugIdMatch = mrDesc.match(/^BUG_ID=(\\d+)\\s*$/m);\nconst bugId = bugIdMatch ? bugIdMatch[1].trim() : '';\n\nif (!bugId) {\n  // No BUG_ID found — skip (return flag for downstream IF)\n  return { hasBugId: false, bugId: '', mrUrl, projectId };\n}\n\n// Project config (inlined — keep in sync with 📋 项目配置)\nconst table = [\n  [\"power_quality_module\", \"/root/git/power_quality_module\", \"799\", \"wangrui\", \"develop\", \"52\"],\n];\nconst defaults = { projectOwner: \"developer\" };\n\nlet projectOwner = defaults.projectOwner;\nfor (const [, , glId, owner] of table) {\n  if (glId === projectId && owner) { projectOwner = owner; break; }\n}\n\n// Credential config (inlined — keep in sync with 🔑 密钥配置)\nconst secrets = {\n  zentaoUrl:      \"http://172.17.0.100:9191/zentao\",\n  zentaoAccount:  \"wangrui\",\n  zentaoPassword: \"Zc123456\",\n  gitlabUrl:      \"http://172.17.0.100:8080\",\n  gitlabToken:    \"71XpJFW6PQzqwmXbvUZE\",\n};\n\nconst credFile = `/tmp/n8n-mr-creds-${bugId}.env`;\nconst skillPy  = '/root/.claude/skills/zc-bug-fix/scripts/bugfix_flow.py';\n\nfunction sq(v) { return \"'\" + String(v).replace(/'/g, \"'\\\\''\") + \"'\"; }\n\nconst writeCredsCmd = [\n  `printf '%s\\\\n'`,\n  sq(`ZENTAO_URL=${secrets.zentaoUrl}`),\n  sq(`ZENTAO_ACCOUNT=${secrets.zentaoAccount}`),\n  sq(`ZENTAO_PASSWORD=${secrets.zentaoPassword}`),\n  sq(`GITLAB_URL=${secrets.gitlabUrl}`),\n  sq(`GITLAB_TOKEN=${secrets.gitlabToken}`),\n  sq(`PROJECT_OWNER=${projectOwner}`),\n  sq(`GITLAB_PROJECT_ID=${projectId}`),\n  `> ${sq(credFile)}`,\n].join(' ');\n\n// bug_type: pass empty string — already set during premerge-writeback\nconst resolveCmd = [\n  `ZC_BUG_FIX_CONFIG=${sq(credFile)}`,\n  `python3 ${sq(skillPy)}`,\n  `zentao-postmerge-resolve`,\n  sq(bugId),\n  sq(''),   // bug_type empty — already set\n  sq(mrUrl),\n  `2>&1`,\n  `&& echo STATUS=RESOLVE_OK || echo STATUS=RESOLVE_FAIL`,\n].join(' ');\n\nconst cleanupCmd = `rm -f ${sq(credFile)}`;\n\nreturn {\n  hasBugId: true,\n  bugId,\n  mrUrl,\n  projectId,\n  resolveCommand: `${writeCredsCmd}\\n${resolveCmd}\\n${cleanupCmd}`,\n};\n"
+        },
+        "id": "ca68efe3-54a2-4476-9cc5-defb7dc23ee5",
+        "name": "准备MR回调",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          352,
+          704
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "80e12588-43a0-4215-bbed-2607259b0c9f",
+                "leftValue": "={{ $json.hasBugId }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "d4eea5f8-b901-46fc-ab51-b36e3d539f73",
+        "name": "有BUG_ID?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          592,
+          704
+        ]
+      },
+      {
+        "parameters": {
+          "command": "={{ $json.resolveCommand }}"
+        },
+        "id": "ce106a11-91f4-4d6f-b0b9-ebef54c06748",
+        "name": "执行已解决",
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          832,
+          704
+        ]
+      },
+      {
+        "parameters": {
+          "command": "={{ $('准备执行').item.json.checkFixCommand }}"
+        },
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          2384,
+          0
+        ],
+        "id": "3944c440-2b58-4019-900b-8eeda63aef34",
+        "name": "检查修复结果"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "valid-check-1777515861417",
+                "leftValue": "={{ $json.stdout }}",
+                "rightValue": "STATUS=VALID",
+                "operator": {
+                  "type": "string",
+                  "operation": "contains"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          2528,
+          -64
+        ],
+        "id": "valid-if-1777515861417",
+        "name": "修复有效?"
+      },
+      {
+        "parameters": {
+          "executeOnce": false,
+          "command": "={{ $('准备执行').item.json.earlyFailCommand }}"
+        },
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [
+          2560,
+          256
+        ],
+        "id": "early-fail-1777515861417",
+        "name": "早期失败回写"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "过滤 /ai-fix",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "过滤 /ai-fix": {
+        "main": [
+          [
+            {
+              "node": "📋 项目配置",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "准备执行": {
+        "main": [
+          [
+            {
+              "node": "回写处理中",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "回写处理中": {
+        "main": [
+          [
+            {
+              "node": "环境准备",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "环境准备": {
+        "main": [
+          [
+            {
+              "node": "检查准备",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "检查准备": {
+        "main": [
+          [
+            {
+              "node": "⚙️路由AI",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "准备失败处理",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Claude Code": {
+        "main": [
+          [
+            {
+              "node": "合并AI输出",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "准备失败处理": {
+        "main": [
+          [
+            {
+              "node": "修复成功?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "解析结果": {
+        "main": [
+          [
+            {
+              "node": "修复成功?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "修复成功?": {
+        "main": [
+          [
+            {
+              "node": "回写成功",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "回写失败",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "📋 项目配置": {
+        "main": [
+          [
+            {
+              "node": "🔑 密钥配置",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "🔑 密钥配置": {
+        "main": [
+          [
+            {
+              "node": "⚙️ AI引擎",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "推送分支": {
+        "main": [
+          [
+            {
+              "node": "创建 Issue",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "创建 Issue": {
+        "main": [
+          [
+            {
+              "node": "创建 MR",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "创建 MR": {
+        "main": [
+          [
+            {
+              "node": "准备BugType分类",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "准备BugType分类": {
+        "main": [
+          [
+            {
+              "node": "AI分类BugType",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AI分类BugType": {
+        "main": [
+          [
+            {
+              "node": "提取BugType",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "提取BugType": {
+        "main": [
+          [
+            {
+              "node": "解析结果",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenAI Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI分类BugType",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "⚙️ AI引擎": {
+        "main": [
+          [
+            {
+              "node": "准备执行",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "⚙️路由AI": {
+        "main": [
+          [
+            {
+              "node": "Claude Code",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Codex执行",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Codex执行": {
+        "main": [
+          [
+            {
+              "node": "合并AI输出",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "合并AI输出": {
+        "main": [
+          [
+            {
+              "node": "检查修复结果",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook GitLab MR": {
+        "main": [
+          [
+            {
+              "node": "过滤 MR合并",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "过滤 MR合并": {
+        "main": [
+          [
+            {
+              "node": "准备MR回调",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "准备MR回调": {
+        "main": [
+          [
+            {
+              "node": "有BUG_ID?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "有BUG_ID?": {
+        "main": [
+          [
+            {
+              "node": "执行已解决",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "检查修复结果": {
+        "main": [
+          [
+            {
+              "node": "修复有效?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "修复有效?": {
+        "main": [
+          [
+            {
+              "node": "推送分支",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "早期失败回写",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "ruiwarn ruiwarn",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-05-09T02:19:16.751Z",
+        "id": 65,
+        "workflowId": "jF5WhH6jDYHVmIGl",
+        "versionId": "39eb7a21-b118-46e2-a834-f98954015d6b",
+        "event": "deactivated",
+        "userId": "8705a9c0-d855-44ca-8f7e-12f4c3e91279"
+      },
+      {
+        "createdAt": "2026-05-09T02:19:16.784Z",
+        "id": 66,
+        "workflowId": "jF5WhH6jDYHVmIGl",
+        "versionId": "39eb7a21-b118-46e2-a834-f98954015d6b",
+        "event": "activated",
+        "userId": "8705a9c0-d855-44ca-8f7e-12f4c3e91279"
+      }
+    ]
+  }
+}
