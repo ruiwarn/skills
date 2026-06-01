@@ -85,7 +85,9 @@ npx skills add https://github.com/sickn33/antigravity-awesome-skills --skill cod
 
 #AI调教
 npx skills add https://github.com/tanweai/pua
-
+#人性化表达
+npx skills add https://github.com/galaxy-dawn/claude-scholar --skill writing-anti-ai
+npx skills add https://github.com/hardikpandya/stop-slop
 
 ```
 
