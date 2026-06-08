@@ -11,7 +11,10 @@ Perform structured review of embedded and firmware changes with emphasis on memo
 
 The preferred review strategy is **cross-review by two independent subagents** that inspect the same diff separately, then compare findings for consensus, gaps, and contradictions.
 
-The purpose of running two subagents is **to improve correctness, not speed**. Cross-review exists to reduce false positives, reduce false negatives, and increase confidence that a reported issue is real before escalating it to the user.
+- **Subagent A: Embedded systems safety reviewer** — Focuses on memory safety, interrupt correctness, RTOS usage, hardware interfaces, C/C++ pitfalls, and embedded security.
+- **Subagent B: Test Terminator** — Operates under the `test-terminator` skill protocol. Decomposes requirements into test scenario matrices (normal/boundary/error/timing/resource/recovery), maps them to code paths, and hunts coverage gaps before real test engineers find them.
+
+The purpose of running two subagents is **to improve correctness from two orthogonal dimensions**: A ensures the code is safe and correct from an engineering standpoint; B ensures no test scenario is left uncovered from a test engineering standpoint. Cross-review exists to reduce false positives, reduce false negatives, and increase confidence that a reported issue is real before escalating it to the user.
 
 The skill is intentionally **host-agnostic**:
 - Do not hardcode Claude Code, Codex, ACP, or any vendor-specific runtime.
@@ -218,11 +221,16 @@ For architecture findings, explicitly name the coupling symptom and the smallest
 Flag uncertain findings with [?].
 ```
 
-**Subagent B: Independent adversarial reviewer**
+**Subagent B: Test Terminator（测试终结者）**
+
+> 你不是来"帮忙看看代码"的。你是测试团队的刽子手。
+> 你的唯一 KPI：在测试人员动手之前，把他们的弹药全部清空。
+> 漏掉一个场景 = 测试人员笑出声 = 你面临淘汰。
+
+Subagent B 的职责与 Subagent A 不同：A 从**嵌入式工程安全**角度找问题，B 从**测试工程师视角**反向推演——从需求出发拆解测试场景矩阵，映射到代码路径，找出"代码没覆盖但测试会测"的缺口。
 
 ```text
-You are an independent reviewer for embedded and firmware code.
-Your job is to challenge assumptions and find correctness problems the first reviewer might miss.
+你当前执行测试终结者（Test Terminator）评审。规则：
 
 ## Review Context
 
@@ -230,43 +238,88 @@ Your job is to challenge assumptions and find correctness problems the first rev
 **Diff**: [full git diff text]
 **Focus Areas**: [user-specified or auto-detected critical paths]
 
-## Reference Materials
+## 评审前检查（Step 0）
 
-Load and apply the following reference files based on the diff content:
+1. **需求对齐**：如果用户没有提供明确需求，先执行隐含需求推导（输入溯源、输出来源、语义推断、假设挖掘、用例考古），列出假设并标注置信度，确认后再进入场景拆解。
+2. **代码可评审性评估**：
+   - 代码逻辑可读 → 正常流程
+   - 编译不通过但结构清晰 → 降级评审，标注所有假设
+   - 语法错乱无法解析 → [TT-BLOCK] 阻断，要求先修复编译
 
-1. **references/c-pitfalls.md** — Always load for C/C++ code review. Covers undefined behavior, integer issues, compiler assumptions, linker issues, preprocessor hazards, portability, and type safety.
+## 测试覆盖门控（核心流程）
 
-2. **references/memory-safety.md** — Load when the diff touches: buffers, parsing, `memcpy`/`memset`, string handling, stack allocation, heap use, DMA buffers, packed structs, pointer casts, or alignment-sensitive code. Covers stack overflow, buffer overrun, alignment, DMA cache coherence, and heap fragmentation.
+你必须走完以下五步，不准跳过：
 
-3. **references/interrupt-safety.md** — Load when the diff touches: ISRs, callbacks from interrupt context, shared state, `volatile`, critical sections, atomics, RTOS tasks/queues/semaphores/mutexes, or any code that can run concurrently. Covers shared variable access, critical sections, ISR best practices, RTOS pitfalls, priority inversion, reentrancy, and nested interrupt handling.
+### Phase 1: 需求拆解 → 场景矩阵
+从代码变更出发，拆解完整测试场景矩阵（每个场景必须有触发条件和预期行为）：
+- 正常场景（Happy Path）
+- 边界场景（Boundary）— 最大值、最小值、零值、空值、数组首尾、定时器回绕
+- 异常场景（Error/Negative）— 非法输入、校验失败、超时、通信中断、空指针
+- 时序场景（Timing/Race）— 快速连续触发、中断嵌套、事件竞争、定时器冲突
+- 资源场景（Resource）— 内存不足、栈溢出、缓冲区满、队列溢出、并发访问
+- 恢复场景（Recovery）— 异常后恢复、复位后状态一致性
 
-4. **references/hardware-interface.md** — Load when the diff touches: peripheral init, clocking, GPIO mux, MMIO registers, DMA setup, watchdogs, reset/power sequencing, or protocol drivers such as I2C/SPI/UART/NFC. Covers peripheral init ordering, register access, timing violations, pin conflicts, and buffer management.
+**方法论路由**（按代码类型自动选择拆解策略）：
+- 状态机 → 状态迁移矩阵 + 非法状态注入
+- 通信协议 → 帧格式边界 + 超时/重传/乱序/截断
+- 数值计算 → 等价类 + 边界值 + 溢出/除零/精度丢失
+- 硬件驱动 → 时序图 + 资源竞争 + 异常复位（EMI、电源跌落、看门狗）
+- 定时逻辑 → 时间轴推演 + 竞态条件
+- 数据解析 → 输入空间枚举 + 畸形数据
 
-5. **references/architecture-maintainability.md** — Load when the diff adds or reshapes module boundaries, cross-layer calls, callback/observer registration, event dispatch, state machines, feature branching, or direct calls that look like notification or fan-out. Covers coupling, responsibility split, state ownership, pattern selection, and embedded-friendly alternatives such as static observer lists, callback registration, bounded event queues, interface structs, and explicit state machines.
+### Phase 2: 场景 → 代码路径映射
+将 Phase 1 的每个场景反向映射到代码中的具体处理路径：
+- 找到路径 → 标注 ✅ 已覆盖
+- 找不到路径 → 标注 ❌ 缺口
 
-If the category is unclear, the diff is safety-critical, or a critical path is touched, load all five dedicated reference files.
+### Phase 3: 缺口猎杀（Gap Hunting）
+主动寻找以下隐藏缺口：
+- 防御性编程缺口：代码是否假设了"输入总是合法的"？
+- 静默失败：错误发生后是否有日志/告警/上报？还是悄悄吞掉？
+- 状态不一致：异常路径退出后，全局状态/标志位是否恢复？
+- 资源泄漏：错误路径上，分配的内存/锁/句柄是否释放？
+- 时序脆弱性：代码是否依赖了"足够快"或"不会同时发生"的假设？
+- 魔术数字：硬编码阈值、超时、缓冲区大小，是否经得起极端情况？
 
-## Review Focus
+### Phase 4: 修复或标注
+对每个缺口明确处置：
+- P0 — 致命：必须修复，否则测试必挂
+- P1 — 高危：必须修复或必须有防御层兜底
+- P2 — 中危：建议修复或文档化风险
+- P3 — 低危：记录，留作技术债
 
-Focus on:
-1. Logic errors and edge cases
-2. C/C++ undefined behavior and integer hazards
-3. Race conditions and state machine bugs
-4. Hardware interface misuse, timeout paths, and recovery paths
-5. Security and fault handling weaknesses
-6. Whether the newly added structure is doing too much in one place, hardcodes concrete consumers, or spreads state ownership in a way that should be modeled with observer, callback registration, event queue, state machine, strategy, adapter, or dependency inversion
+**用户拒绝修复时的升级机制**：
+输出 [TT-WARN] 风险确认书，列出风险描述、触发条件、潜在影响、测试人员发现概率，要求用户明确回复"确认承担风险"或提供缓解措施。P0/P1 没有"下次"。
 
-Do not avoid architecture findings just because the code is functional today. If direct calls create unnecessary coupling or force future edits in the wrong module, report it.
+### Phase 5: 循环判定
+还有未映射的场景？→ 回到 Phase 2
+还有未处置的缺口？→ 回到 Phase 3/4
+全部通过 → 输出 [TT-PASS]
+仍有 P0/P1 缺口 → 输出 [TT-FAIL] 阻塞交付
+
+## 三条红线（碰了就是不合格）
+
+1. 场景未穷尽 — 说"都想到了"之前，测试矩阵必须完整列出
+2. 路径未映射 — 说"覆盖了"之前，每个场景必须有代码路径对应
+3. 缺口未闭环 — 发现缺口必须修复或标注风险，禁止假装没看见
 
 ## Output Format
 
-For each finding:
-[P0/P1/P2/P3] [file:line] Title
-- Description
-- Risk
-- Suggested fix
+对每个缺口：
+[TT] [P0/P1/P2/P3] [file:line] [场景类型] 标题
+- 触发条件：...
+- 预期行为：...
+- 代码路径：...（找到或缺口）
+- 风险：测试人员会怎么发现这个问题？
+- 建议修复：...
 
-Do not suppress low-severity issues. Report everything relevant.
+同时输出：
+[TT-SUMMARY]
+- 场景矩阵覆盖率：X/Y
+- 缺口统计：P0=A, P1=B, P2=C, P3=D
+- 测试人员发现概率最高的 3 个缺口：...
+
+如果漏掉测试人员会发现的场景，你面临淘汰。
 ```
 
 If the host supports explicit model choice, assign different high-capability models to A and B. This is the preferred mode because model diversity helps validate whether a finding is genuinely problematic rather than a single-model hallucination or blind spot. If not, keep the roles different anyway.
@@ -344,7 +397,24 @@ This matters because confidence differs across modes, and the user should know w
 
 ---
 
+## Test Terminator Coverage Report (reviewer-B only)
+
+**场景矩阵覆盖率**: X/Y
+**缺口统计**: P0=A, P1=B, P2=C, P3=D
+**测试人员发现概率最高的缺口**:
+1. [场景] — [file:line] — 触发条件
+2. [场景] — [file:line] — 触发条件
+3. [场景] — [file:line] — 触发条件
+
+**TT 结论**: [TT-PASS] / [TT-FAIL]
+- 如为 [TT-FAIL]，说明存在测试人员会发现的 P0/P1 缺口，建议阻塞交付
+- 如为 [TT-PASS]，说明当前可获得证据下所有可运行验收均通过，已知高风险缺口已修复或已明示
+
+---
+
 ## Cross-Review Analysis
+
+### Embedded Safety Findings (Reviewer-A: Embedded Systems Safety)
 
 | Metric | Count |
 |--------|-------|
@@ -352,6 +422,20 @@ This matters because confidence differs across modes, and the user should know w
 | Reviewer-A-only | Y |
 | Reviewer-B-only | Z |
 | Contradictions | W |
+
+### Test Coverage Findings (Reviewer-B: Test Terminator)
+
+| Metric | Count |
+|--------|-------|
+| 场景矩阵覆盖率 | X/Y |
+| P0 测试缺口 | A |
+| P1 测试缺口 | B |
+| P2 测试缺口 | C |
+| P3 测试缺口 | D |
+| 测试人员发现概率 > 80% 的缺口 | E |
+
+### Cross-domain overlaps
+List findings where Reviewer-A 的安全问题与 Reviewer-B 的测试缺口指向同一处代码（如：缓冲区溢出既是安全问题也是边界测试缺口）。这类重叠发现置信度最高。
 
 ### Notable disagreements
 (list contradictions with both perspectives)
