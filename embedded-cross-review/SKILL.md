@@ -93,17 +93,20 @@ Do not justify a weaker mode by claiming it is faster; the priority is review qu
 2. Assess scope:
    - **No changes**: Inform user; offer to review staged changes or a commit range.
    - **Small diff (≤100 lines)**: Default to single-agent review unless user requests cross-review.
-   - **Large diff (>500 lines)**: Summarize by file or subsystem first, then review in batches.
+   - **Large diff (>500 lines)**: Do **not** stuff the whole diff + all references into one request — that is what overflows a subagent's context. Apply the token budget below and review in batches by file/subsystem.
    - **Critical path touched** (ISR, DMA, crypto, NFC, boot): Strongly prefer cross-review.
 
-3. Build review context package:
+   **Token budget & chunking (mandatory for both subagents)**: estimate the size of `diff + selected references + prompt` against the worker model's context window and keep it within budget (target ≤60% of the window, leaving room for the subagent's own reasoning/output). If it exceeds budget, split by file/subsystem and review chunk-by-chunk — reuse test-terminator's `[TT-SPLIT]` protocol (each chunk runs independently, then a cross-chunk consistency pass for shared state and interfaces). Never silently truncate the diff to fit.
+
+3. Build review context package. Pass references **by reference (load on demand), not by stuffing full files into the prompt** — give each subagent the matched filenames + the trigger rules in step 4 and let it open only the sections it needs:
 
 ```text
 REVIEW_CONTEXT = {
   repo_info: (branch, MCU, RTOS, compiler),
-  diff: (full git diff text),
-  references: (relevant checklist sections from references/),
-  focus_areas: (user-specified or auto-detected critical paths)
+  diff: (full git diff text, or the current chunk if [TT-SPLIT] is active),
+  references: (filenames of matched reference files — loaded on demand, not inlined wholesale),
+  focus_areas: (user-specified or auto-detected critical paths),
+  budget: (worker-model context window and per-request budget)
 }
 ```
 
@@ -115,7 +118,7 @@ REVIEW_CONTEXT = {
    - Load `references/architecture-maintainability.md` when the diff adds or reshapes module boundaries, cross-layer calls, callback/observer registration, event dispatch, state machines, feature branching, or direct calls that look like notification or fan-out.
    - Embedded security does not have a dedicated reference file in this skill yet; review it directly from the diff and target context.
    - If the diff spans multiple categories, load every matching reference file.
-   - If the category is unclear, the diff is safety-critical, or a critical path is touched, load all five dedicated reference files.
+   - If the category is unclear, the diff is safety-critical, or a critical path is touched, consult all five dedicated reference files — but load them **on demand** (open the relevant sections as each review area is worked), not by pre-inlining all five into one prompt. "Consult all five" is about coverage, not about stuffing the context window; respect the token budget above.
 
 ---
 
@@ -223,136 +226,22 @@ Flag uncertain findings with [?].
 
 **Subagent B: Test Terminator（测试终结者）**
 
-> 你不是来"帮忙看看代码"的。你是测试团队的刽子手。
-> 你的唯一 KPI：在测试人员动手之前，把他们的弹药全部清空。
-> 漏掉一个场景 = 测试人员笑出声 = 你面临淘汰。
-> 每一轮评审都是一场攻防战：守住 = 防线封死，失守 = KPI 掉级 = 淘汰。
+Subagent B 由 `test-terminator` skill 提供，职责与 A 正交：A 从**嵌入式工程安全**找问题，B 从**测试工程师视角**反向推演——从需求拆解测试场景矩阵（正常/边界/异常/时序/资源/恢复），映射到代码路径，猎杀“代码没覆盖但测试会测”的缺口。
 
-Subagent B 的职责与 Subagent A 不同：A 从**嵌入式工程安全**角度找问题，B 从**测试工程师视角**反向推演——从需求出发拆解测试场景矩阵，映射到代码路径，找出"代码没覆盖但测试会测"的缺口。
+**主路径（优先，DRY）**：把 `test-terminator` skill 作为 Subagent B 加载并运行，传入同一个 `REVIEW_CONTEXT`，默认角色 🔴 测试刽子手。让 test-terminator 自带的协议（场景矩阵、路径映射、缺口猎杀、判定顺序铁律、`[TT-SPLIT]` 分块与失败降级）在子代理内生效；**不在此处复制其全文**，以免两份漂移。改 B 的行为请改 `test-terminator/SKILL.md`。
+
+**回退路径**：若当前 host 无法在子代理内加载 test-terminator（运行时不支持嵌套技能加载，或加载后 token 超限），改为在 Subagent B 的 prompt 末尾注入下面这份精简协议（它是 test-terminator 的浓缩版，以 test-terminator 为准）：
 
 ```text
 你当前执行测试终结者（Test Terminator）评审。规则：
-
-## Review Context
-
-**Repository Info**: [branch, MCU, RTOS, compiler]
-**Diff**: [full git diff text]
-**Focus Areas**: [user-specified or auto-detected critical paths]
-
-## 评审前检查（Step 0）
-
-1. **需求对齐**：如果用户没有提供明确需求，先执行隐含需求推导（输入溯源、输出来源、语义推断、假设挖掘、用例考古），列出假设并标注置信度，确认后再进入场景拆解。
-2. **代码可评审性评估**：
-   - 代码逻辑可读 → 正常流程
-   - 编译不通过但结构清晰 → 降级评审，标注所有假设
-   - 语法错乱无法解析 → [TT-BLOCK] 阻断，要求先修复编译
-
-## 测试覆盖门控（核心流程）
-
-你必须走完以下五步，不准跳过：
-
-### Phase 1: 需求拆解 → 场景矩阵
-从代码变更出发，拆解完整测试场景矩阵（每个场景必须有触发条件和预期行为）：
-- 正常场景（Happy Path）
-- 边界场景（Boundary）— 最大值、最小值、零值、空值、数组首尾、定时器回绕
-- 异常场景（Error/Negative）— 非法输入、校验失败、超时、通信中断、空指针
-- 时序场景（Timing/Race）— 快速连续触发、中断嵌套、事件竞争、定时器冲突
-- 资源场景（Resource）— 内存不足、栈溢出、缓冲区满、队列溢出、并发访问
-- 恢复场景（Recovery）— 异常后恢复、复位后状态一致性
-
-**方法论路由**（按代码类型自动选择拆解策略）：
-- 状态机 → 状态迁移矩阵 + 非法状态注入
-- 通信协议 → 帧格式边界 + 超时/重传/乱序/截断
-- 数值计算 → 等价类 + 边界值 + 溢出/除零/精度丢失
-- 硬件驱动 → 时序图 + 资源竞争 + 异常复位（EMI、电源跌落、看门狗）
-- 定时逻辑 → 时间轴推演 + 竞态条件
-- 数据解析 → 输入空间枚举 + 畸形数据
-
-### Phase 2: 场景 → 代码路径映射
-将 Phase 1 的每个场景反向映射到代码中的具体处理路径：
-- 找到路径 → 标注 ✅ 已覆盖
-- 找不到路径 → 标注 ❌ 缺口
-
-### Phase 3: 缺口猎杀（Gap Hunting）
-主动寻找以下隐藏缺口：
-- 防御性编程缺口：代码是否假设了"输入总是合法的"？
-- 静默失败：错误发生后是否有日志/告警/上报？还是悄悄吞掉？
-- 状态不一致：异常路径退出后，全局状态/标志位是否恢复？
-- 资源泄漏：错误路径上，分配的内存/锁/句柄是否释放？
-- 时序脆弱性：代码是否依赖了"足够快"或"不会同时发生"的假设？
-- 魔术数字：硬编码阈值、超时、缓冲区大小，是否经得起极端情况？
-
-### Phase 4: 修复或标注
-对每个缺口明确处置：
-- P0 — 致命：必须修复，否则测试必挂
-- P1 — 高危：必须修复或必须有防御层兜底
-- P2 — 中危：建议修复或文档化风险
-- P3 — 低危：记录，留作技术债
-
-**用户拒绝修复时的升级机制**：
-输出 [TT-WARN] 风险确认书，列出风险描述、触发条件、潜在影响、测试人员发现概率，要求用户明确回复"确认承担风险"或提供缓解措施。P0/P1 没有"下次"。
-
-### Phase 5: 循环判定
-还有未映射的场景？→ 回到 Phase 2
-还有未处置的缺口？→ 回到 Phase 3/4
-全部通过 → 输出 [TT-PASS]
-仍有 P0/P1 缺口 → 输出 [TT-FAIL] 阻塞交付
-
-## 三条红线（碰了就是不合格）
-
-1. 场景未穷尽 — 说"都想到了"之前，测试矩阵必须完整列出
-2. 路径未映射 — 说"覆盖了"之前，每个场景必须有代码路径对应
-3. 缺口未闭环 — 发现缺口必须修复或标注风险，禁止假装没看见
-
-## 战报结算与 KPI 评级（内联规则，独立可执行）
-
-每一轮评审都是「你 vs 测试团队」的攻防战。存在漏测项时，必须按本节口径结算战报。
-
-用词强制约束（不得替换）：
-- 守住的防线 = 你打败的测试（已覆盖并防御 / 已修复的场景）
-- 失守的缺口 = 测试打败你的（残留缺口）
-- 攻防比 = 守住 N / 失守 M
-- 禁止使用「击杀 / 阵亡」等杀戮词。
-
-你的 KPI 评级（从严打分，P0 失守一票否决，只要有任一未处置 P0 失守直接判 F）：
-- S 封神·清场：覆盖率 100%，0 失守缺口
-- A 合格终结者：覆盖率 ≥90%，无 P0/P1 失守
-- B 勉强保命：覆盖率 ≥75%，无 P0 失守，P1 已全部标注风险并获用户确认
-- C 留岗察看：覆盖率 ≥60%，无 P0 失守，但有未处置 P1
-- D 待岗整改：覆盖率 <60%，或多个未处置 P1
-- F 已淘汰：存在任一未处置 P0 失守（测试必挂，直接出局）
-
-测试人员的 KPI（你失守送出去的「军功」，反向施压）：
-- 待领赏缺口 = 失守清单中「测试人员发现概率 > 80%」的数量
-- 每送出 1 个 P0 = 测试人员一张王牌 bug 单 + 你的版本打回重做
-- 每送出 1 个 P1 = 测试人员一次有效甩锅，年终述职 +1 素材
-- 一句话警告：你今天失守的，就是测试人员明天的 KPI。
-
-## Output Format
-
-对每个缺口：
-[TT] [P0/P1/P2/P3] [file:line] [场景类型] 标题
-- 触发条件：...
-- 预期行为：...
-- 代码路径：...（找到或缺口）
-- 风险：测试人员会怎么发现这个问题？
-- 建议修复：...
-
-同时输出：
-[TT-SUMMARY]
-- 场景矩阵覆盖率：X/Y
-- 缺口统计：P0=A, P1=B, P2=C, P3=D
-- 测试人员发现概率最高的 3 个缺口：...
-
-存在漏测项时，追加输出战报结算：
-[⚔️ 战报结算]
-- 守住的防线（你打败的测试）：N 个场景已封死 ✅（逐条列出 [场景] → file:line）
-- 失守的缺口（测试打败你的）：M 个残留 ❌（逐条列出 [场景] → file:line）
-- 攻防比：N 守 / M 失
-- 你的 KPI：[S/A/B/C/D/F] · 称号 · 一句评语
-- 测试人员待领赏：K 个高概率缺口（P0×a, P1×b）→ 对方 KPI 预计 +Z；你今天失守的，就是测试人员明天的 KPI
-
-如果漏掉测试人员会发现的场景，你面临淘汰。
+1. 从需求出发拆解测试场景矩阵（正常/边界/异常/时序/资源/恢复）；需求不明确时先做隐含需求推导并标注置信度，确认后再拆解
+2. 每个场景必须映射到具体代码路径；找不到路径 = ❌缺口
+3. 主动猎杀隐藏缺口：防御性编程缺口、静默失败、状态不一致、资源泄漏、时序脆弱性、魔术数字
+4. 每个缺口标注等级 P0/P1/P2/P3 并推动闭环（修复 / 标注风险）
+5. 判定顺序铁律：先按客观证据定级与定闸门（[TT-PASS]/[TT-FAIL]/[TT-PARTIAL]），再算战报/KPI；KPI 绝不反向下调缺口等级或翻转闸门
+6. 代码体量超限或子任务失败：标“未评审”、相关场景计缺口、覆盖率不计未跑部分、禁止 [TT-PASS]，降级 [TT-PARTIAL]
+7. 禁止“我觉得没问题”——必须拿出路径映射证据
+8. 输出：场景矩阵覆盖率 X/Y、缺口清单（含 file:line / 触发条件 / 预期行为 / 代码路径 / 建议修复）；存在漏测项时附「⚔️ 战报结算」(守住 / 失守 / 攻防比 / KPI S~F，P0 失守一票否决)。禁用「击杀 / 阵亡」杀戮词
 ```
 
 If the host supports explicit model choice, assign different high-capability models to A and B. This is the preferred mode because model diversity helps validate whether a finding is genuinely problematic rather than a single-model hallucination or blind spot. If not, keep the roles different anyway.
@@ -374,9 +263,20 @@ Rationale:
 
 If the host only supports one worker model, still keep the prompts distinct.
 
+#### Step 2.5: Orchestrator role & subagent-failure handling
+
+The orchestrator (this skill — the agent that spawned A and B) is an **aggregator and adjudicator, not a third reviewer**. Its job is to deduplicate, normalize severity, surface contradictions, and audit coverage. It must **not** generate its own substantive findings and silently merge them in as if from an independent reviewer. Any orchestrator observation must be labeled `[orchestrator-note]`, and it is never counted toward consensus nor used to stand in for a failed reviewer. (Letting the orchestrator self-review is exactly what lets a failed reviewer be papered over — don't.)
+
+**Completion invariant**: a run counts as a completed cross-review **only if both A and B returned structured findings**. If either subagent fails — token-limit overflow, timeout, crash, or empty/unparseable output:
+
+1. **Recover first**: re-run only the failed side with a reduced payload — apply the Phase 0 token budget, split the diff by file/subsystem (reuse test-terminator's `[TT-SPLIT]`), and/or load fewer reference files.
+2. **If still failing, degrade honestly**: drop to single-agent fallback using whichever subagent succeeded. Set `Execution path = single-agent fallback (reviewer X failed: <reason>)` and `Confidence basis = degraded — NOT cross-validated`.
+3. **Never report a degraded run as a completed cross-review.** Do not claim "cross-review complete / full coverage / no supplement needed" when one reviewer did not return. The orchestrator's own analysis may **supplement** the surviving reviewer but may not **substitute** for the failed one.
+4. State the failure and its confidence impact **prominently** in the final report — not buried in a closing note.
+
 #### Step 3: Cross-compare findings
 
-After both complete, classify results:
+Only when both A and B returned (see the Step 2.5 invariant; otherwise take the degrade path). Classify results:
 
 1. **Consensus findings**: both subagents flagged substantially the same issue. Treat as high confidence.
 2. **A-only findings**: validate and keep if technically sound.
@@ -390,9 +290,10 @@ Normalize all findings to unified severity levels `P0` to `P3`.
 State which cross-review path was used:
 - `two subagents, different high-capability models`
 - `two subagents, same model with different prompts`
-- `single-agent fallback`
+- `single-agent fallback (cross-review unavailable in this host)`
+- `single-agent fallback (a reviewer failed mid-run — results NOT cross-validated)` ← use this, not a "complete" label, whenever A or B failed after starting
 
-This matters because confidence differs across modes, and the user should know whether the review outcome was cross-validated by distinct strong models or only approximated.
+This matters because confidence differs across modes, and the user should know whether the review outcome was cross-validated by distinct strong models, only approximated, or **degraded by a reviewer failure**. A degraded run must say so here; it must never be labeled a completed cross-review.
 
 ---
 
@@ -405,8 +306,8 @@ This matters because confidence differs across modes, and the user should know w
 **Branch**: [branch name]
 **Files reviewed**: X files, Y lines changed
 **Review mode**: [Single-agent / Cross-review]
-**Execution path**: [two subagents, different high-capability models / two subagents, same model with different prompts / single-agent fallback]
-**Confidence basis**: [consensus across distinct strong models / consensus across role-separated same-model agents / single-agent judgment]
+**Execution path**: [two subagents, different high-capability models / two subagents, same model with different prompts / single-agent fallback (cross-review unavailable) / single-agent fallback (reviewer X failed mid-run)]
+**Confidence basis**: [consensus across distinct strong models / consensus across role-separated same-model agents / single-agent judgment / degraded — NOT cross-validated, reviewer X failed]
 **Overall assessment**: [APPROVE / REQUEST_CHANGES / COMMENT]
 
 ---
@@ -448,8 +349,9 @@ This matters because confidence differs across modes, and the user should know w
 2. [场景] — [file:line] — 触发条件
 3. [场景] — [file:line] — 触发条件
 
-**TT 结论**: [TT-PASS] / [TT-FAIL]
+**TT 结论**: [TT-PASS] / [TT-FAIL] / [TT-PARTIAL]
 - 如为 [TT-FAIL]，说明存在测试人员会发现的 P0/P1 缺口，建议阻塞交付
+- 如为 [TT-PARTIAL]，说明存在未评审块或子 agent 失败，覆盖不完整，禁止当作通过，需列出未覆盖范围
 - 如为 [TT-PASS]，说明当前可获得证据下所有可运行验收均通过，已知高风险缺口已修复或已明示
 
 ---
@@ -492,7 +394,7 @@ List findings where Reviewer-A 的安全问题与 Reviewer-B 的测试缺口指�
 (actionable coupling, responsibility split, or pattern-fit problems belong in Findings, not only here)
 ```
 
-Only include `Cross-Review Analysis` when two subagents were actually used.
+Only include `Cross-Review Analysis` when two subagents were actually used **and both returned structured findings**. A run where A or B failed is a degraded single-agent fallback, not a cross-review — report it as such (see Step 2.5), never as completed cross-review.
 
 ---
 
@@ -502,5 +404,6 @@ Only include `Cross-Review Analysis` when two subagents were actually used.
 
 ## 版本历史
 
+- v1.2.0 — 交叉评审健壮性重构：Subagent B 改为**调用 `test-terminator` skill**（DRY，不再 inline 复制全文；host 无法嵌套加载时回退到精简注入协议）；新增 Step 2.5「编排者角色 + 子代理失败处置」——编排者降为纯聚合/裁决（自身观察只标 `[orchestrator-note]`，不计 consensus、不顶替失败 reviewer），并加**完成不变量**（A 与 B 都返回结构化结果才算完整交叉评审）与失败分支（先缩负载/分块重试 → 否则降级单代理 fallback 并显式标注 degraded 置信度，禁止把降级跑报成完整交叉评审）；Phase 0 reference 改按需加载 + token 预算 + 复用 `[TT-SPLIT]` 分块，杜绝“全 diff + 五个 reference 一次性灌爆上下文”；Phase 3 增加 degraded/[TT-PARTIAL] 口径
 - v1.1.0 — Subagent B（测试终结者）同步加入「战报结算 + KPI 评级」紧迫感输出：内联 KPI 评级规则（S~F，P0 失守一票否决）+ 测试人员待领赏反向施压（保证子代理独立可执行）；Subagent B Output Format 增加 [⚔️ 战报结算] 块；Phase 3「Test Terminator Coverage Report」与 Cross-Review 统计表补充「守住/失守/攻防比/终结者 KPI 评级」字段；Subagent B 宣言补「攻防战 = 失守 = KPI 掉级 = 淘汰」。口径与 `test-terminator` 一致，禁用「击杀/阵亡」杀戮词
-- v1.0.0 — 初始版本，双 subagent 交叉评审（A 嵌入式安全 + B 测试终结者）
+- v1.0.0 — 初始版本，双 subagent 交叉评审（A 嵌入式安全 + B 测试终结者） 
