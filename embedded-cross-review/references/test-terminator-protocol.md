@@ -1,8 +1,26 @@
----
-name: test-terminator
-description: "Use when reviewing code from a test engineer's perspective. Systematically decompose requirements into test scenarios, map them to code paths, hunt coverage gaps, and force the developer to fix or disclose every hole before delivery. If a real test engineer could find a bug you missed, you failed."
-license: MIT
----
+<!-- ============================================================
+     BUNDLED COPY — Test Terminator protocol for Subagent B.
+
+     Subagent B runs the protocol by READING THIS FILE (no skill-in-skill call,
+     which is unreliable on some hosts). The path it uses —
+     references/test-terminator-protocol.md inside this skill — is always valid
+     no matter where the skill is installed.
+
+     HOW TO UPDATE (manual, by hand):
+       1. Open  test-terminator/SKILL.md
+       2. Copy everything BELOW its YAML frontmatter
+          (from the first "# Test Terminator" heading down)
+       3. Paste it here, replacing everything below this banner.
+     Source of truth: test-terminator/SKILL.md
+============================================================ -->
+
+# Test Terminator Protocol (Subagent B) — bundled copy
+
+> Hand-maintained copy of the `test-terminator` skill. When you change
+> `test-terminator/SKILL.md`, re-copy its body here. This file is self-contained
+> and ships inside embedded-cross-review — it does not depend on a path to the
+> other skill.
+
 
 # Test Terminator（测试终结者）
 

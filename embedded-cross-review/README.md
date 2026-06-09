@@ -14,7 +14,9 @@ A code review skill for embedded and firmware projects with **two-subagent cross
 
 ### Two-Subagent Cross-Review
 - **Reviewer A** focuses on embedded systems safety, concurrency, RTOS, timing, and hardware access
-- **Reviewer B** acts as an independent adversarial reviewer for logic bugs, undefined behavior, recovery paths, and security issues
+- **Reviewer B** runs the **Test Terminator** protocol (test-engineer view): decomposes requirements into a scenario matrix (normal/boundary/error/timing/resource/recovery), maps each to a code path, and hunts coverage gaps. It runs from a **bundled copy** at `references/test-terminator-protocol.md` — Reviewer B *reads that file* rather than calling the `test-terminator` skill, because skill-in-skill is unreliable on some hosts and install layouts vary
+- **The orchestrator is an aggregator/adjudicator, not a third reviewer** — it deduplicates, normalizes severity, surfaces contradictions, and audits coverage; its own notes are labeled `[orchestrator-note]` and never substitute for a reviewer
+- **Completion invariant** — a run is a *completed cross-review* only if **both** A and B returned. If one fails (token overflow, timeout, crash), the orchestrator retries with a chunked/reduced payload; if it still fails, it **degrades honestly to single-agent fallback** marked `NOT cross-validated`, never reported as a full cross-review
 - **Cross-comparison** identifies consensus bugs (high confidence) and reviewer-specific catches
 - The goal is **better correctness and confidence**, not speed
 - When the host supports model choice, prefer **two different high-capability models** for the two reviewers
@@ -70,23 +72,25 @@ Review my current git changes in firmware-pro2
 ```
 User: "review firmware-pro2"
          │
-    Host environment (orchestrator)
+    Host (orchestrator = aggregator/adjudicator, NOT a reviewer)
          │
     ┌────┴────┐
     │         │
 Reviewer A  Reviewer B
-(embedded    (independent
- safety)      adversarial view)
+(embedded    (Test Terminator — reads bundled
+ safety)      references/test-terminator-protocol.md)
     │         │
+    │         └─ fails? → retry chunked → else DEGRADE to
+    │                     single-agent fallback (NOT cross-validated)
     └────┬────┘
          │
-    Cross-Compare
+    Cross-Compare  (only if BOTH returned)
     ├─ Consensus → HIGH CONFIDENCE (real bugs)
     ├─ Reviewer-A-only → may catch embedded-specific issues
     ├─ Reviewer-B-only → may catch independent blind spots
     └─ ⚠️ Contradictions → escalate to human
          │
-    Unified Report
+    Unified Report (states execution path + confidence basis)
 ```
 
 ## Severity Levels
@@ -112,7 +116,8 @@ embedded-cross-review/
     ├── interrupt-safety.md           # ISR, volatile, critical sections, RTOS
     ├── hardware-interface.md         # Peripherals, registers, protocols, timing
     ├── architecture-maintainability.md # Coupling, state ownership, pattern fit
-    └── c-pitfalls.md                 # UB, integers, compiler, preprocessor, portability
+    ├── c-pitfalls.md                 # UB, integers, compiler, preprocessor, portability
+    └── test-terminator-protocol.md   # Subagent B protocol — hand-maintained copy of the test-terminator skill
 ```
 
 ## Requirements
@@ -122,6 +127,13 @@ embedded-cross-review/
 - Optional: model selection support for heterogeneous cross-review
 - Git (for diff extraction)
 - Target repository accessible locally
+
+## Changelog
+
+- **v1.3.0** — Subagent B now runs from a **bundled copy** of the Test Terminator protocol (`references/test-terminator-protocol.md`): it reads the file instead of calling the `test-terminator` skill, so it works on hosts where skill-in-skill is unreliable and regardless of install layout. The copy is **hand-maintained** — when you change `test-terminator/SKILL.md`, re-paste its body into the reference (steps are in the file's banner).
+- **v1.2.0** — Cross-review robustness: orchestrator is aggregator-only (not a third reviewer), completion invariant (both A & B must return), honest failure/degrade path, Phase 0 token budget + on-demand references + `[TT-SPLIT]` chunking.
+- **v1.1.0** — Test Terminator battle-report + KPI urgency output.
+- **v1.0.0** — Initial two-subagent cross-review.
 
 ## Credits
 
