@@ -7,7 +7,7 @@ description: Use when a user provides a bug link or ID, requirement, or change r
 
 ## 目标
 
-处理任务工作树的两类操作：**创建**（默认）与**删除**（用户明确要求时）。创建时从本次刷新后的 `origin/develop` 生成隔离分支和相邻工作树，职责到返回工作树链接为止。两类操作都不修改业务代码、不提交、不推送，也不创建 Issue 或 MR；删除时不得擅自销毁用户未提交的改动或未合并的分支。
+处理任务工作树的两类操作：**创建**（默认）与**删除**（用户明确要求时）。创建时从本次刷新后的 `origin/develop` 生成隔离分支和相邻工作树，并把主仓库根目录被 `.gitignore` 忽略的 `zc-bug-fix.config` 凭证文件拷入工作树，职责到返回工作树链接为止。两类操作都不修改业务代码、不提交、不推送，也不创建 Issue 或 MR；删除时不得擅自销毁用户未提交的改动或未合并的分支。
 
 ## 输入分析
 
@@ -122,7 +122,21 @@ test -z "$(git -C "$target_path" status --porcelain)"
 
 如果创建命令已经产生部分状态但验证失败，保留现场并报告失败；不得为了回滚而擅自删除工作树或分支。
 
-### 6. 相对化工作树 git 指针（WSL 环境必做）
+### 6. 拷贝凭证配置
+
+每次创建工作树都必须把主仓库根目录的 `zc-bug-fix.config` 拷入工作树根目录，这是创建流程的必做步骤，而非等出问题再补。该文件含禅道、GitLab 凭证，已被 `.gitignore` 忽略、不在 git 跟踪内容中，从 `origin/develop` 建出的工作树里不会有它；不拷贝则工作树中 `zc-bug-fix` 等操作找不到凭证：
+
+```bash
+src="$repo_root/zc-bug-fix.config"
+dst="$target_path/zc-bug-fix.config"
+if [ -f "$src" ]; then
+    cp "$src" "$dst"
+fi
+```
+
+主仓库根目录存在该文件时必须拷贝；仅当主仓库根本没有该文件——说明此仓库不用 `zc-bug-fix`——时才跳过，且不视为错误。该文件是未跟踪的本地凭证，拷贝不涉及任何提交或推送。
+
+### 7. 相对化工作树 git 指针（WSL 环境必做）
 
 WSL 的 `git worktree add` 会把 WSL 绝对路径（`/mnt/...`）写进工作树 `.git` 指针和 admin 目录的 `gitdir` 回指文件。Windows 原生 IDE（Cursor、非 WSL 远程的 VS Code 等）读不懂 `/mnt/...`，打开工作树会报"没有 git 仓库"（主仓库因 `.git` 是真实目录而不受影响）。创建后立即把这两个指针改写为相对路径，WSL 与 Windows 便都能识别。本技能保证工作树与主仓库同处 `repo_parent` 下互为同级，故相对路径固定：
 
@@ -235,4 +249,5 @@ git -C "$repo_root" worktree list
 | 名称冲突后自动加后缀 | 停止并报告冲突 |
 | 顺手修代码、提交或推送 | 创建并验证工作树后立即返回链接 |
 | 成功后输出长篇总结 | 最终只输出可点击的绝对路径链接 |
-| WSL 建的工作树在 Windows IDE 报"没有 git 仓库" | 执行第 6 步把 `.git`/`gitdir` 指针改相对路径 |
+| 工作树中 `zc-bug-fix` 找不到凭证 | 执行第 6 步把主仓库的 `zc-bug-fix.config` 拷入工作树根目录 |
+| WSL 建的工作树在 Windows IDE 报"没有 git 仓库" | 执行第 7 步把 `.git`/`gitdir` 指针改相对路径 |
