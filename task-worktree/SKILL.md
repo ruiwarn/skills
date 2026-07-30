@@ -1,13 +1,13 @@
 ---
 name: task-worktree
-description: Use when a user provides a bug link or ID, requirement, or change request and asks to create or prepare an isolated Git worktree, sibling workspace, working directory, or task branch before implementation.
+description: Use when a user provides a bug link or ID, requirement, or change request and asks to create or prepare an isolated Git worktree, sibling workspace, working directory, or task branch before implementation, or to delete/remove an existing worktree when explicitly asked.
 ---
 
-# 创建任务工作树
+# 任务工作树
 
 ## 目标
 
-先理解任务，再从本次刷新后的 `origin/develop` 创建隔离分支和相邻工作树。职责到返回工作树链接为止，不修改业务代码，不提交、不推送，也不创建 Issue 或 MR。
+处理任务工作树的两类操作：**创建**（默认）与**删除**（用户明确要求时）。创建时从本次刷新后的 `origin/develop` 生成隔离分支和相邻工作树，职责到返回工作树链接为止。两类操作都不修改业务代码、不提交、不推送，也不创建 Issue 或 MR；删除时不得擅自销毁用户未提交的改动或未合并的分支。
 
 ## 输入分析
 
@@ -28,9 +28,11 @@ description: Use when a user provides a bug link or ID, requirement, or change r
 
 | 类型 | 本地分支 | 相邻工作树 |
 |---|---|---|
-| 有编号的 Bug | `bugfix/<id>-<slug>` | `../<project>-bug-<id>` |
-| 无编号的 Bug | `bugfix/<slug>` | `../<project>-bug-<slug>` |
-| 需求或行为变更 | `feature/<slug>` | `../<project>-feature-<slug>` |
+| 有编号的 Bug | `bugfix/<id>-<slug>` | `../wt-bug-<id>` |
+| 无编号的 Bug | `bugfix/<slug>` | `../wt-bug-<slug>` |
+| 需求或行为变更 | `feature/<slug>` | `../wt-feat-<slug>` |
+
+目录名统一以 `wt-` 前缀开头（worktree 缩写），一眼区分工作树与主仓库；不再拼接 `<project>` 前缀，避免目录名过长触发 Windows 260 字符路径上限。分支名仍保持 `bugfix/` 或 `feature/` 前缀不变。
 
 不要为冲突名称自动添加时间戳、序号或随机后缀。静默换名会让任务和目录失去稳定对应关系。
 
@@ -120,6 +122,28 @@ test -z "$(git -C "$target_path" status --porcelain)"
 
 如果创建命令已经产生部分状态但验证失败，保留现场并报告失败；不得为了回滚而擅自删除工作树或分支。
 
+### 6. 相对化工作树 git 指针（WSL 环境必做）
+
+WSL 的 `git worktree add` 会把 WSL 绝对路径（`/mnt/...`）写进工作树 `.git` 指针和 admin 目录的 `gitdir` 回指文件。Windows 原生 IDE（Cursor、非 WSL 远程的 VS Code 等）读不懂 `/mnt/...`，打开工作树会报"没有 git 仓库"（主仓库因 `.git` 是真实目录而不受影响）。创建后立即把这两个指针改写为相对路径，WSL 与 Windows 便都能识别。本技能保证工作树与主仓库同处 `repo_parent` 下互为同级，故相对路径固定：
+
+```bash
+admin_dir="$repo_root/.git/worktrees/$target_name"
+# 工作树 .git -> admin 目录
+printf 'gitdir: ../%s/.git/worktrees/%s\n' "$repo_name" "$target_name" > "$target_path/.git"
+# admin gitdir -> 工作树 .git
+printf '../../../../%s/.git\n' "$target_name" > "$admin_dir/gitdir"
+# commondir 通常已是 ../..，若被写成绝对路径则一并相对化
+grep -q '^/' "$admin_dir/commondir" 2>/dev/null && printf '../..\n' > "$admin_dir/commondir"
+```
+
+改写后复查 git 仍可解析；失败则用变量重新还原绝对路径并报告，不留半 broken 状态：
+
+```bash
+git -C "$target_path" rev-parse --show-toplevel
+git -C "$target_path" rev-parse --git-common-dir
+test "$(git -C "$target_path" branch --show-current)" = "$branch_name"
+```
+
 ## 输出
 
 成功后，最终回复严格只包含一个使用绝对路径的 Markdown 链接：
@@ -131,10 +155,76 @@ test -z "$(git -C "$target_path" status --porcelain)"
 例如：
 
 ```markdown
-[project-bug-101](/workspace/project-bug-101)
+[wt-bug-101](/workspace/wt-bug-101)
 ```
 
 失败时不要输出虚假链接，只用一句话说明未创建的具体原因。不要在最终回复重复业务分析、命令、分支名或验证过程。
+
+## 删除工作树
+
+用户明确要求删除某个工作树时执行。删除不可逆，必须先检查再动手，绝不擅自销毁用户未提交的改动或未合并的分支。
+
+### 1. 定位工作树
+
+用 `git worktree list` 确认目标已注册，解析出工作树绝对路径 `wt_path` 与分支名 `branch_name`：
+
+```bash
+git -C "$repo_root" worktree list --porcelain -z
+```
+
+用户给出目录名、路径或分支名时，按 `--porcelain` 记录精确匹配 `worktree <绝对路径>` 与 `branch refs/heads/<branch>` 字段；找不到则停止并报告。
+
+### 2. 检查状态
+
+```bash
+git -C "$repo_root" fetch --prune origin '+refs/heads/develop:refs/remotes/origin/develop' || true
+# 工作树是否有未提交改动
+git -C "$wt_path" status --porcelain
+# 分支是否已合并进 origin/develop（输出 MERGED 表示已合并）
+git -C "$repo_root" merge-base --is-ancestor "$branch_name" origin/develop && echo MERGED || echo NOT_MERGED
+# 分支是否已推送到远端（非空表示已推送）
+git -C "$repo_root" ls-remote --heads origin "refs/heads/$branch_name"
+```
+
+- 工作树有未提交改动：停止，列出改动文件，让用户先处理；仅当用户**显式要求强制删除**时才进入第 3 步的 `--force` 路径。
+- 分支未合并且未推送：删除分支前必须经用户显式确认（见第 4 步）。
+
+### 3. 删除工作树
+
+```bash
+# 干净工作树
+git -C "$repo_root" worktree remove "$wt_path"
+# 有改动且用户显式强制
+git -C "$repo_root" worktree remove --force "$wt_path"
+```
+
+`worktree remove` 失败（如文件被外部占用）时保留现场并报告，不要再用 `--force` 兜底。
+
+### 4. 删除本地分支（可选，需用户明确要求）
+
+默认只删工作树，不删分支。仅当用户要求删分支时：
+
+```bash
+# 已合并或已推送：安全删除
+git -C "$repo_root" branch -d "$branch_name"
+# 未合并且用户显式确认丢弃：不可逆
+git -C "$repo_root" branch -D "$branch_name"
+```
+
+未合并/未推送的分支默认保留；用户显式确认后才用 `-D`，并提示该分支的提交将被丢弃。
+
+### 5. 验证与清理
+
+```bash
+git -C "$repo_root" worktree prune
+git -C "$repo_root" worktree list
+```
+
+确认目标工作树已不在列表中；若用户要求删分支，再确认 `refs/heads/$branch_name` 已不存在。
+
+### 输出
+
+一句话报告删除结果：工作树路径、是否一并删除分支。不输出长篇总结。
 
 ## 常见错误
 
@@ -145,3 +235,4 @@ test -z "$(git -C "$target_path" status --porcelain)"
 | 名称冲突后自动加后缀 | 停止并报告冲突 |
 | 顺手修代码、提交或推送 | 创建并验证工作树后立即返回链接 |
 | 成功后输出长篇总结 | 最终只输出可点击的绝对路径链接 |
+| WSL 建的工作树在 Windows IDE 报"没有 git 仓库" | 执行第 6 步把 `.git`/`gitdir` 指针改相对路径 |
