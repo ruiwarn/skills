@@ -1,6 +1,6 @@
 ---
 name: zc-bug-fix
-description: Use when the user asks to fix a bug, resolve an issue, or provides a bug URL/bug ID from 禅道, GitLab, GitHub, Jira, or similar systems; especially when the work needs a full workflow of reading the bug, fixing code, verifying, creating issue/MR, and writing status back to the tracker.
+description: Use when the user asks to fix, resume, or finish a bug workflow involving 禅道, GitLab, GitHub, Jira, or a similar tracker, including partially completed Issue/MR/writeback work on Windows or Linux.
 ---
 
 # Bug-Fix 用户优先分阶段执行协议
@@ -21,6 +21,25 @@ description: Use when the user asks to fix a bug, resolve an issue, or provides 
 | F6 | **禁止提交与当前 bug 无关的代码改动** |
 | F7 | **禁止在验证未通过的情况下宣称"已完成"** |
 | F8 | **禁止不经用户确认就创建分支、推送代码、创建 MR** |
+| F9 | **真实 Bug 不是测试环境：禁止用真实工单试验脚本修复、接口参数或状态恢复方案** |
+| F10 | **终态且分类不同必须停止并人工确认，禁止自动编辑后再次“已解决”** |
+| F11 | **禁止仅凭 HTTP/脚本输出宣称回写成功；必须通过最终后置条件回读** |
+
+---
+
+## Python 与操作系统入口
+
+脚本要求 Python 3.8–3.12，只依赖标准库。先选择一个可用解释器，后续全程复用：
+
+| 环境 | 首选探测 | 备用探测 | 主控示例 |
+|------|----------|----------|----------|
+| Windows 11 | `py -3 --version` | `python --version` | `py -3 "C:\absolute\path\to\zc-bug-fix\scripts\bugfix_flow.py" help` |
+| Linux | `python3 --version` | `python --version` | `python3 "/absolute/path/to/zc-bug-fix/scripts/bugfix_flow.py" help` |
+
+1. 解析本 skill 的绝对目录和 `scripts/bugfix_flow.py` 绝对路径。
+2. 路径始终作为带引号的独立参数传入。
+3. 下文用 `<RUNNER>` 表示“已验证的 Python 启动器 + 主控脚本绝对路径”，不是要原样输入的文字。
+4. 解释器低于 Python 3.8 时停止，不尝试运行。
 
 ---
 
@@ -47,16 +66,16 @@ description: Use when the user asks to fix a bug, resolve an issue, or provides 
 如果用户从阶段 4 开始，且当前只需要分析现有改动、创建分支、提交、推送，可暂不执行本阶段。
 
 **执行：**
-```bash
-python3 $SKILL_DIR/scripts/bugfix_flow.py check-config
+```text
+<RUNNER> check-config
 ```
 
 **如果输出 `CONFIG_OK`：** 进入阶段 1。
 **如果输出 `MISSING_CONFIG` 或 `MISSING_FIELD`：** ⛔ 立即停止，告知用户创建配置文件：
-```bash
-cp $SKILL_DIR/zc-bug-fix.config.example ./zc-bug-fix.config
-# 然后编辑填入实际的禅道/GitLab 信息
+```text
+<RUNNER> init-config
 ```
+然后编辑脚本返回的配置文件绝对路径，填入实际的禅道/GitLab 信息。
 
 ⛔ 配置不完整时，禁止执行**依赖配置的后续阶段**。
 
@@ -70,8 +89,8 @@ cp $SKILL_DIR/zc-bug-fix.config.example ./zc-bug-fix.config
 - 如果当前阶段需要引用禅道 Bug，但上下文里没有 `bug_id` 或禅道链接，先向用户索要，再继续。
 
 **执行：**
-```bash
-python3 $SKILL_DIR/scripts/bugfix_flow.py fetch <bug_id>
+```text
+<RUNNER> fetch <bug_id>
 ```
 
 **必须从返回的 JSON 中提取以下信息：**
@@ -144,11 +163,7 @@ python3 $SKILL_DIR/scripts/bugfix_flow.py fetch <bug_id>
 
 **建议按以下顺序补齐验证证据：**
 
-1. 扫描代码库(包含.test等隐藏目录)，运行相关测试用例（如果有）
-```bash
-# 参考命令，实际命令可能根据项目测试框架不同而不同
-make -C .test 2>/dev/null || true
-```
+1. 扫描代码库（包含 `.test` 等隐藏目录），识别项目真实使用的构建与测试入口，再运行相关用例。不要使用吞掉失败结果的伪通用命令。
 2. 如果有类似 meter-protocol-serial 的串口通讯skill，必须根据修改的内容，发送、读取相关协议报文进行自测验证，后续把自测的相关报文附加到议题中。
 
 ⛔ 如果当前目标是进入阶段 7 / 8，验证未全部通过时必须返回阶段 2 修复。
@@ -170,8 +185,8 @@ make -C .test 2>/dev/null || true
 **如果缺少 `bug_id` 或禅道链接：** 先向用户索要。分支名、提交信息、Issue/MR 模板都依赖它。
 
 **4.1 创建 bugfix 分支（脚本自动从 develop 创建）：**
-```bash
-python3 $SKILL_DIR/scripts/bugfix_flow.py create-branch <bug_id> <short-desc>
+```text
+<RUNNER> create-branch <bug_id> <short-desc>
 ```
 分支名格式：`bugfix/<bug_id>-<short-desc>`
 
@@ -185,8 +200,8 @@ git commit -m "fix(bug#<bug_id>): <简要描述问题和修复方案>"
 ⛔ 禁止在 develop/main/master 上 commit。脚本会拒绝。
 
 **4.3 推送分支（脚本自动拒绝推送到保护分支）：**
-```bash
-python3 $SKILL_DIR/scripts/bugfix_flow.py push-branch
+```text
+<RUNNER> push-branch
 ```
 
 **检查点：** 确认远程分支已创建。记住分支名，阶段 6 需要用。
@@ -198,13 +213,11 @@ python3 $SKILL_DIR/scripts/bugfix_flow.py push-branch
 如果用户明确要求从阶段 5 开始，即视为允许创建 Issue；不要再重复询问。若缺少禅道链接 / `bug_id`，先向用户索要，因为模板必须引用它。
 
 **5.1 准备 Issue 内容：**
-参考模板 `$SKILL_DIR/templates/issue_6d_template.md`，将完整 6D 内容写入文件：
-```bash
-# 把 issue 内容写入文件，不要直接拼命令行
-cat > /tmp/issue_<bug_id>.md << 'EOF'
-... 6D 内容 ...
-EOF
+使用跨平台命令复制模板到系统临时目录：
+```text
+<RUNNER> prepare-description issue <bug_id>
 ```
+记录脚本返回的绝对路径，用编辑工具填写完整 6D 内容。不要把描述直接拼进命令行。
 
 Issue 必须至少包含：
 1. 禅道链接
@@ -217,8 +230,8 @@ Issue 必须至少包含：
 8. 责任人
 
 **5.2 创建 Issue：**
-```bash
-python3 $SKILL_DIR/scripts/bugfix_flow.py create-issue <bug_id> /tmp/issue_<bug_id>.md "bug,<标签>"
+```text
+<RUNNER> create-issue <bug_id> "<阶段 5.1 返回的绝对路径>" "bug,<标签>"
 ```
 
 **检查点：** 从脚本输出的 JSON 中提取 `web_url` 字段，保存为 `ISSUE_URL`。阶段 7 必须使用。
@@ -231,18 +244,17 @@ python3 $SKILL_DIR/scripts/bugfix_flow.py create-issue <bug_id> /tmp/issue_<bug_
 如果用户明确要求从阶段 6 开始，即视为允许创建 MR；不要再重复询问。MR 描述中的修复内容、根因、修改文件、验证结果应优先复用前面已分析好的信息，而不是重新回退到阶段 0。
 
 **6.1 准备 MR 描述：**
-参考模板 `$SKILL_DIR/templates/mr_template.md`，将 MR 描述写入文件：
-```bash
-cat > /tmp/mr_<bug_id>.md << 'EOF'
-... MR 描述 ...
-EOF
+使用跨平台命令复制模板到系统临时目录：
+```text
+<RUNNER> prepare-description mr <bug_id>
 ```
+记录脚本返回的绝对路径，用编辑工具填写 MR 描述。
 
 MR 描述必须包含：修复内容、根因、修改文件、验证结果、禅道链接、Issue 链接、责任人。
 
 **6.2 创建 MR：**
-```bash
-python3 $SKILL_DIR/scripts/bugfix_flow.py create-mr <bug_id> "bugfix/<bug_id>-<short-desc>" /tmp/mr_<bug_id>.md
+```text
+<RUNNER> create-mr <bug_id> "bugfix/<bug_id>-<short-desc>" "<阶段 6.1 返回的绝对路径>"
 ```
 
 **检查点：** 从脚本输出的 JSON 中提取 `web_url` 字段，保存为 `MR_URL`。阶段 7 必须使用。
@@ -261,16 +273,51 @@ python3 $SKILL_DIR/scripts/bugfix_flow.py create-mr <bug_id> "bugfix/<bug_id>-<s
 > - ✅ 阶段 6 已创建 MR，有 MR_URL
 > - 缺少任何一项，⛔ 禁止执行本阶段
 
-**使用一条命令完成全部禅道回写：**
-```bash
-python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-writeback <bug_id> "<bug_type>" "<ISSUE_URL>" "<MR_URL>"
+### 回写状态决策（脚本和执行者都必须遵守）
+
+`browser` 存储的是分类编码，不是字面分类名。每次判断必须严格执行：
+
+**目标中文分类 → 目标编码 → 当前 browser**，最后只比较两个编码。
+
+禁止拿 `chrome` 与中文分类名直接比较。`browser='chrome'` 就表示 `设计_算法设计问题`，不是浏览器信息，也不是未分类。
+
+| 目标中文分类 | 目标编码 | 当前 `browser` | 分类结论 |
+|--------------|----------|-------------------|----------|
+| `设计_算法设计问题` | `chrome` | `chrome` | **已一致，跳过分类** |
+| 任意允许分类 | 映射后的编码 | 相同编码 | **已一致，跳过分类** |
+| 任意允许分类 | 映射后的编码 | 不同编码 | 分类不同，继续检查生命周期 |
+| 任意允许分类 | 无法映射 | 任意值 | 停止并人工确认 |
+
+完成编码比较后，生命周期只有以下动作：
+
+| 当前状态 | 分类结论 | 唯一允许动作 |
+|----------|----------|--------------|
+| `resolved` / `closed` | 已一致 | 跳过分类、跳过解决，只做最终回读 |
+| `resolved` / `closed` | 不同 | **终态且分类不同：停止并人工确认** |
+| `active` | 已一致 | **只执行一次解决，然后最终回读** |
+| `active` | 不同 | 编辑分类、回读确认仍为 `active`、解决一次、最终回读 |
+| 空值或其他状态 | 任意结论 | 停止并报告 |
+
+终态分类冲突会结束本次自动化。不得自动编辑、不得再次解决，也不得建议“会后再自动编辑分类”；只有用户完成独立人工判断并发起新的明确指令后，才能处理。
+
+**错误推理红旗：**
+
+- “`chrome` 和 `设计_算法设计问题` 字符串不同，所以要重写分类” → 错，必须先映射为编码。
+- “分类编辑后若重回 `active`，再点一次解决即可恢复” → 错，禁止对终态 Bug 自动编辑。
+- “经理要求再点一次，重复操作更保险” → 错，终态或已完成动作必须跳过。
+- “旧脚本打印完成，HTML `alert(...)` 可以忽略” → 错，立即停止，回读失败不得继续解决。
+
+**使用一条命令完成幂等禅道回写：**
+```text
+<RUNNER> zentao-writeback <bug_id> "<bug_type>" "<ISSUE_URL>" "<MR_URL>"
 ```
 
-这条命令会**自动**完成以下四步：
+这条命令会**自动**完成以下五步：
 1. ✅ 检查 Bug 当前状态（避免重复操作）
-2. ✅ 确认 Bug — 评论自动附带 Issue 可点击链接
-3. ✅ 设置 Bug 分类到 `browser` 字段（**不是评论**！）
-4. ✅ 解决 Bug — 评论自动附带 MR 可点击链接，自动转派给项目负责人
+2. ✅ 仅在 `active` 且未确认时确认 Bug，评论附带 Issue 可点击链接
+3. ✅ 仅在 `active` 且分类不同时设置 `browser` 字段
+4. ✅ 仅在仍为 `active` 时解决 Bug，评论附带 MR 可点击链接
+5. ✅ 回读并校验最终状态、确认标志和分类编码
 
 **参数说明：**
 | 参数 | 内容 | 示例 |
@@ -283,8 +330,17 @@ python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-writeback <bug_id> "<bug_type>"
 > ⛔ **四个参数全部必填 — 脚本会拒绝不完整的调用**
 > ⛔ **严禁手动拼接禅道 API 调用来替代本命令**
 > ⛔ **严禁把 bug_type 写入评论 — 它通过脚本写入 browser 字段**
+> ⛔ **重复调用只能用于幂等续跑，不能用于试验参数或验证猜想**
 
-**检查点：** 确认脚本输出 `✅ 禅道回写完成`。如果失败，查看错误信息并使用备用命令（见文末）。
+### 最终后置条件
+
+只有脚本最终回读同时满足以下三项，才允许输出 `✅ 禅道回写完成`：
+
+1. `status` 为 `resolved` 或 `closed`
+2. `confirmed` 表示已确认
+3. `browser` 等于目标分类编码
+
+任一项不满足都视为失败。查看只读状态后再决定是否使用单个备用命令，禁止把三个备用命令整套重跑。
 
 ---
 
@@ -306,18 +362,30 @@ python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-writeback <bug_id> "<bug_type>"
 
 ---
 
-## 备用命令（仅在 zentao-writeback 整体失败时逐步补救）
+## 备用命令（仅补齐明确缺失的单个动作）
 
-```bash
+先执行只读检查：
+```text
+<RUNNER> fetch <bug_id>
+```
+
+根据回读结果只选择一个仍缺失的动作：
+
+```text
 # 1. 确认 Bug（评论必须包含 Issue URL）
-python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-confirm <bug_id> "已创建 GitLab issue: <ISSUE_URL>"
+<RUNNER> zentao-confirm <bug_id> "已创建 GitLab issue: <ISSUE_URL>"
 
 # 2. 设置 browser 字段（传中文分类名，不是写评论！）
-python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-set-browser-type <bug_id> "<bug_type>"
+<RUNNER> zentao-set-browser-type <bug_id> "<bug_type>"
 
-# 3. 解决 Bug（评论必须包含 MR URL）
-python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-resolve <bug_id> "已创建 GitLab MR: <MR_URL>" "" "<bug_type>"
+# 3. 解决 Bug（分类已经正确且状态仍为 active 时才执行）
+<RUNNER> zentao-resolve <bug_id> "已创建 GitLab MR: <MR_URL>" ""
 ```
+
+- 分类已经正确：禁止执行第 2 项。
+- 状态已经是 `resolved` / `closed`：禁止执行第 3 项。
+- 终态分类冲突：三个备用命令都不能执行，停止并人工确认。
+- 任一备用动作完成后重新 `fetch`；满足最终后置条件即停止。
 
 ---
 
@@ -339,8 +407,8 @@ python3 $SKILL_DIR/scripts/bugfix_flow.py zentao-resolve <bug_id> "已创建 Git
 | `PROJECT_OWNER` | 项目负责人禅道用户名（bug 解决后转派） |
 
 初始化：
-```bash
-cp $SKILL_DIR/zc-bug-fix.config.example ./zc-bug-fix.config
+```text
+<RUNNER> init-config
 ```
 
 ---
@@ -348,7 +416,7 @@ cp $SKILL_DIR/zc-bug-fix.config.example ./zc-bug-fix.config
 ## 文件结构
 
 ```
-$SKILL_DIR/
+zc-bug-fix/
 ├── SKILL.md                          ← 本文件（用户优先协议）
 ├── zc-bug-fix.config.example         ← 配置模板
 ├── scripts/
@@ -361,5 +429,8 @@ $SKILL_DIR/
 │   ├── issue_6d_template.md          ← Issue 6D 模板
 │   └── mr_template.md                ← MR 描述模板
 └── tests/
-    └── test_config_paths.py          ← Python 测试（pytest）
+    ├── test_config_paths.py          ← 配置、映射与 URL 测试
+    ├── test_cross_platform_helpers.py ← 跨平台辅助命令测试
+    ├── test_zentao_state_machine.py  ← 禅道幂等状态机测试
+    └── test_skill_contract.py        ← skill 安全契约测试
 ```

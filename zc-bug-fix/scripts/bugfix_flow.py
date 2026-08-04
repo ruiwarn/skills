@@ -9,8 +9,11 @@ zentao-writeback 等分阶段命令，按用户当前所处阶段按需调用。
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Sibling-module imports
@@ -18,8 +21,25 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config_paths import get_effective_config_path, get_preferred_config_path, get_example_path
 from check_config import load_config, check_config
-from zentao import ZentaoClient, format_zentao_clickable_links
+from zentao import (
+    ZentaoClient,
+    format_zentao_clickable_links,
+    map_bug_type_to_browser_code,
+)
 from gitlab import GitLabClient
+
+DESCRIPTION_TEMPLATES = {
+    "issue": (
+        Path(__file__).resolve().parent.parent
+        / "templates"
+        / "issue_6d_template.md"
+    ),
+    "mr": (
+        Path(__file__).resolve().parent.parent
+        / "templates"
+        / "mr_template.md"
+    ),
+}
 
 # ---------------------------------------------------------------------------
 # URL validation helpers (module-level so tests can import them directly)
@@ -132,7 +152,7 @@ def zentao_confirm(client: ZentaoClient, bug_id: str, comment: str):
 
 
 def zentao_resolve(client: ZentaoClient, bug_id: str, comment: str,
-                   assigned_to: str = "", bug_type: str = ""):
+                   assigned_to: str = ""):
     """解决 Bug，要求评论包含 MR 链接。"""
     if not bug_id:
         print("错误: 用法 zentao-resolve <bug_id> [comment]", file=sys.stderr)
@@ -141,7 +161,7 @@ def zentao_resolve(client: ZentaoClient, bug_id: str, comment: str,
         print("错误: 解决评论中必须包含 GitLab MR 链接。请先创建 MR 再回写禅道。", file=sys.stderr)
         sys.exit(1)
     comment = format_zentao_clickable_links(comment)
-    client.resolve_bug(bug_id, "fixed", comment, assigned_to, bug_type)
+    client.resolve_bug(bug_id, "fixed", comment, assigned_to, "")
 
 
 def zentao_writeback(client: ZentaoClient, bug_id: str, bug_type: str,
@@ -171,30 +191,52 @@ def zentao_writeback(client: ZentaoClient, bug_id: str, bug_type: str,
     print(f"禅道回写开始: Bug #{bug_id}")
     print("==========================================")
 
-    # Step 1/4
-    print("\n>>> 步骤 1/4: 检查 Bug 当前状态...")
+    # Step 1/5
+    print("\n>>> 步骤 1/5: 检查 Bug 当前状态...")
     client.login()
-    client.fetch_bug_json(bug_id)
+    client.get_bug_snapshot(bug_id)
 
-    # Step 2/4
-    print("\n>>> 步骤 2/4: 确认 Bug（附带 Issue 链接）...")
+    # Step 2/5
+    print("\n>>> 步骤 2/5: 确认 Bug（附带 Issue 链接）...")
     confirm_comment = format_zentao_clickable_links(f"已创建 GitLab issue: {issue_url}")
     client.confirm_bug(bug_id, confirm_comment)
 
-    # Step 3/4
-    print(f"\n>>> 步骤 3/4: 设置 Bug 分类到 browser 字段: {bug_type}...")
+    # Step 3/5
+    print(f"\n>>> 步骤 3/5: 设置 Bug 分类到 browser 字段: {bug_type}...")
     client.update_bug_browser_type(bug_id, bug_type)
 
-    # Step 4/4 - don't pass bug_type since already set in step 3
-    print("\n>>> 步骤 4/4: 解决 Bug（附带 MR 链接）...")
+    # Step 4/5 - don't pass bug_type since already set in step 3
+    print("\n>>> 步骤 4/5: 解决 Bug（附带 MR 链接）...")
     resolve_comment = format_zentao_clickable_links(f"已创建 GitLab MR: {mr_url}")
     client.resolve_bug(bug_id, "fixed", resolve_comment, project_owner, "")
+
+    # 最终只相信回读状态，不根据请求成功或中间输出宣称完成。
+    print("\n>>> 步骤 5/5: 回读最终状态...")
+    snapshot = client.get_bug_snapshot(bug_id)
+    expected_browser = map_bug_type_to_browser_code(bug_type)
+    final_status = str(snapshot.get("status", ""))
+    final_confirmed = str(snapshot.get("confirmed", "")).strip().lower()
+    final_browser = str(snapshot.get("browser", ""))
+    errors = []
+    if final_status not in ("resolved", "closed"):
+        errors.append(f"status={final_status}")
+    if final_confirmed in ("", "0", "false", "no", "none"):
+        errors.append(f"confirmed={final_confirmed}")
+    if final_browser != expected_browser:
+        errors.append(
+            f"browser={final_browser} expected={expected_browser}"
+        )
+    if errors:
+        raise RuntimeError(
+            "禅道回写最终校验失败: " + ", ".join(errors)
+        )
 
     print(f"""
 ==========================================
 ✅ 禅道回写完成:
    Bug #{bug_id}
-   - 状态: 已确认 → 已解决
+   - 最终状态: {final_status}
+   - 确认标志: {final_confirmed}
    - Browser 字段: {bug_type}
    - Issue 链接: {issue_url}
    - MR 链接: {mr_url}
@@ -206,11 +248,47 @@ def print_config_hint():
     """输出配置提示。"""
     preferred = get_preferred_config_path()
     example = get_example_path()
+    script_path = Path(__file__).resolve()
     print(f"""配置文件:
   {preferred}
 
 初始化方式:
-  cp {example} {preferred}""")
+  {sys.executable} "{script_path}" init-config
+
+配置模板:
+  {example}""")
+
+
+def initialize_config() -> str:
+    """跨平台初始化项目配置，已有文件一律不覆盖。"""
+    source = Path(get_example_path())
+    target = Path(get_preferred_config_path())
+    if target.exists():
+        raise FileExistsError(f"配置文件已存在，拒绝覆盖: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(str(source), str(target))
+    return str(target)
+
+
+def prepare_description(kind: str, bug_id: str) -> str:
+    """复制 Issue/MR 模板到系统临时目录并返回绝对路径。"""
+    if kind not in DESCRIPTION_TEMPLATES:
+        raise ValueError("描述类型必须是 issue 或 mr")
+    if not bug_id:
+        raise ValueError("bug_id 不能为空")
+
+    source = Path(DESCRIPTION_TEMPLATES[kind])
+    handle, temp_path = tempfile.mkstemp(
+        prefix=f"zc-bug-fix-{kind}-{bug_id}-",
+        suffix=".md",
+    )
+    os.close(handle)
+    try:
+        shutil.copyfile(str(source), temp_path)
+    except Exception:
+        os.unlink(temp_path)
+        raise
+    return temp_path
 
 # ---------------------------------------------------------------------------
 # Issue / MR creation wrappers
@@ -244,6 +322,8 @@ def print_usage():
     print(f"""bug-fix 主控脚本（按需阶段执行）- Python 版本
 
 常用命令（根据用户指定阶段按需使用）:
+  {script_name} init-config                                          # 跨平台初始化配置
+  {script_name} prepare-description <issue|mr> <bug_id>              # 准备临时描述文件
   {script_name} check-config                                          # 阶段 0: 检查配置
   {script_name} fetch <bug_id>                                        # 阶段 1: 读取禅道 Bug
   {script_name} create-branch <bug_id> <short_desc>                   # 阶段 4: 创建 bugfix 分支
@@ -255,7 +335,7 @@ def print_usage():
 备用命令（仅在 zentao-writeback 失败时逐步使用）:
   {script_name} zentao-confirm <bug_id> [comment]
   {script_name} zentao-set-browser-type <bug_id> <bug_type>
-  {script_name} zentao-resolve <bug_id> [comment] [assigned_to] [bug_type]
+  {script_name} zentao-resolve <bug_id> [comment] [assigned_to]
   {script_name} config-hint
 
 说明:
@@ -286,6 +366,28 @@ def main():
 
     if command == "config-hint":
         print_config_hint()
+        sys.exit(0)
+
+    if command == "init-config":
+        try:
+            print(initialize_config())
+        except (FileExistsError, FileNotFoundError, RuntimeError) as e:
+            print(f"错误: {e}", file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
+
+    if command == "prepare-description":
+        if len(args) < 2:
+            print(
+                "错误: 用法 prepare-description <issue|mr> <bug_id>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        try:
+            print(prepare_description(args[0], args[1]))
+        except (ValueError, FileNotFoundError, RuntimeError) as e:
+            print(f"错误: {e}", file=sys.stderr)
+            sys.exit(1)
         sys.exit(0)
 
     # Git-only commands (no API needed, but don't need config check)
@@ -360,12 +462,11 @@ def main():
 
         elif command == "zentao-resolve":
             if not args:
-                print("错误: 用法 zentao-resolve <bug_id> [comment] [assigned_to] [bug_type]", file=sys.stderr)
+                print("错误: 用法 zentao-resolve <bug_id> [comment] [assigned_to]", file=sys.stderr)
                 sys.exit(1)
             comment = args[1] if len(args) > 1 else ""
             assigned_to = args[2] if len(args) > 2 else ""
-            bug_type = args[3] if len(args) > 3 else ""
-            zentao_resolve(zentao_client, args[0], comment, assigned_to, bug_type)
+            zentao_resolve(zentao_client, args[0], comment, assigned_to)
 
         else:
             print_usage()

@@ -7,6 +7,7 @@
 
 import sys
 from pathlib import Path
+from typing import Dict, List, Tuple
 
 from config_paths import get_effective_config_path, get_example_path, get_preferred_config_path
 
@@ -22,16 +23,16 @@ REQUIRED_FIELDS = [
 ]
 
 
-def load_config(config_path: str) -> dict:
+def load_config(config_path: str) -> Dict[str, str]:
     """
     加载 shell 风格的 KEY=VALUE 配置文件。
     以 # 开头的行视为注释，空行跳过。
     返回键值对字典。
     """
-    config: dict[str, str] = {}
+    config = {}  # type: Dict[str, str]
     path = Path(config_path)
 
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         stripped = line.strip()
         # 跳过空行和注释
         if not stripped or stripped.startswith("#"):
@@ -44,7 +45,7 @@ def load_config(config_path: str) -> dict:
     return config
 
 
-def check_config() -> tuple[str, list[str]]:
+def check_config() -> Tuple[str, List[str]]:
     """
     检查配置文件是否存在并包含所有必填字段。
 
@@ -78,7 +79,7 @@ def check_config() -> tuple[str, list[str]]:
 
     # ── 加载并校验必填字段 ────────────────────────────────────────
     config = load_config(config_path)
-    missing: list[str] = []
+    missing = []  # type: List[str]
 
     for key in REQUIRED_FIELDS:
         if not config.get(key):

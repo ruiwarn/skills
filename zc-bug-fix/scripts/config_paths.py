@@ -8,6 +8,7 @@
 import os
 import subprocess
 from pathlib import Path
+from typing import Tuple
 
 # ── 常量 ──────────────────────────────────────────────────────────────
 CONFIG_NAME = "zc-bug-fix.config"
@@ -52,7 +53,7 @@ def get_preferred_config_path() -> str:
     return str(Path(project_root) / CONFIG_NAME)
 
 
-def get_effective_config_path() -> tuple[str, bool]:
+def get_effective_config_path() -> Tuple[str, bool]:
     """
     只读取项目级配置；显式覆盖时也只接受用户指定的那一份文件。
 

@@ -114,8 +114,9 @@ class ZentaoClient:
         resp = self.opener.open(req)
         return json.loads(resp.read().decode())
 
-    def extract_bug_field(self, payload: dict, field: str) -> str:
-        """从禅道 bug JSON 中提取指定字段。
+    @staticmethod
+    def extract_bug(payload: dict) -> dict:
+        """从禅道响应中提取原始 Bug 字典。
 
         兼容 data 为对象或 JSON 字符串两种格式。
         """
@@ -134,8 +135,12 @@ class ZentaoClient:
                     bug = data.get("bug", data)
 
         if not isinstance(bug, dict):
-            bug = {}
+            return {}
+        return bug
 
+    def extract_bug_field(self, payload: dict, field: str) -> str:
+        """从禅道 bug JSON 中提取指定字段。"""
+        bug = self.extract_bug(payload)
         value = bug.get(field, "")
         if value is None:
             value = ""
@@ -153,13 +158,18 @@ class ZentaoClient:
 
     def get_bug_status(self, bug_id: str) -> str:
         """获取 bug 当前状态。"""
-        payload = self.fetch_bug_json(bug_id)
-        return self.extract_bug_field(payload, "status")
+        return str(self.get_bug_snapshot(bug_id).get("status", ""))
 
     def get_bug_confirmed(self, bug_id: str) -> str:
         """获取 bug 是否已确认。"""
-        payload = self.fetch_bug_json(bug_id)
-        return self.extract_bug_field(payload, "confirmed")
+        return str(self.get_bug_snapshot(bug_id).get("confirmed", ""))
+
+    def get_bug_snapshot(self, bug_id: str) -> dict:
+        """读取并返回 Bug 字典；无法提取时失败关闭。"""
+        bug = self.extract_bug(self.fetch_bug_json(bug_id))
+        if not bug:
+            raise RuntimeError(f"无法读取 bug #{bug_id} 详情")
+        return bug
 
     def confirm_bug(self, bug_id: str, comment: str = "已确认"):
         """确认 bug。仅对 active 且未确认的 bug 执行。"""
@@ -169,11 +179,11 @@ class ZentaoClient:
             raise RuntimeError(f"无法读取 bug #{bug_id} 当前状态")
         if status != "active":
             print(f"跳过确认: bug #{bug_id} 当前状态为 '{status}'，只有 active 状态才需要 confirm")
-            return
+            return False
         confirmed = self.get_bug_confirmed(bug_id)
         if confirmed and confirmed != "0":
             print(f"跳过确认: bug #{bug_id} 当前 confirmed={confirmed}，无需重复 confirm")
-            return
+            return False
 
         data = urllib.parse.urlencode({"comment": comment}).encode()
         url = f"{self.base_url}/bug-confirmBug-{bug_id}.json"
@@ -182,18 +192,28 @@ class ZentaoClient:
         body = resp.read().decode()
         self._ensure_response_ok("confirm", bug_id, body)
         print(body)
+        return True
 
     def resolve_bug(self, bug_id: str, resolution: str = "fixed",
                     comment: str = "已修复", assigned_to: str = "",
                     bug_type: str = ""):
         """解决 bug。已处于终态的 bug 会跳过。"""
         self.login()
+
+        # 分类编辑必须发生在解决前。bug-edit 可能把终态 Bug 重置为 active。
+        if bug_type:
+            self.update_bug_browser_type(bug_id, bug_type)
+
         status = self.get_bug_status(bug_id)
         if not status:
             raise RuntimeError(f"无法读取 bug #{bug_id} 当前状态")
         if status in ("resolved", "closed"):
             print(f"跳过解决: bug #{bug_id} 当前状态为 '{status}'，已经是终态")
-            return
+            return False
+        if status != "active":
+            raise RuntimeError(
+                f"bug #{bug_id} 当前状态为 '{status}'，不允许自动解决"
+            )
 
         if not assigned_to:
             assigned_to = self.project_owner
@@ -210,11 +230,15 @@ class ZentaoClient:
         self._ensure_response_ok("resolve", bug_id, body)
         print(body)
 
-        if bug_type:
-            self.update_bug_browser_type(bug_id, bug_type)
+        final_status = self.get_bug_status(bug_id)
+        if final_status not in ("resolved", "closed"):
+            raise RuntimeError(
+                f"bug #{bug_id} 解决后状态回读为 '{final_status}'，停止并人工检查"
+            )
+        return True
 
     def update_bug_browser_type(self, bug_id: str, bug_type: str):
-        """更新 bug 的 browser 字段为 bug 类型分类编码。"""
+        """幂等更新 active Bug 的 browser 分类字段。"""
         if not bug_id or not bug_type:
             raise ValueError("bug_id 和 bug_type 不能为空")
 
@@ -226,42 +250,80 @@ class ZentaoClient:
             raise ValueError(f"未识别的 bug 类型 '{bug_type}'，请人工确认后再提交")
 
         self.login()
-        bug_json = self.fetch_bug_json(bug_id)
+        bug = self.get_bug_snapshot(bug_id)
+        status = str(bug.get("status", ""))
+        current_browser = str(bug.get("browser", ""))
 
-        # 提取当前 bug 数据以保留必填字段
-        bug = None
-        if isinstance(bug_json, dict):
-            if isinstance(bug_json.get("bug"), dict):
-                bug = bug_json["bug"]
-            else:
-                data = bug_json.get("data")
-                if isinstance(data, str):
-                    try:
-                        data = json.loads(data)
-                    except Exception:
-                        data = {}
-                if isinstance(data, dict):
-                    bug = data.get("bug", data)
-        if not isinstance(bug, dict):
-            bug = {}
+        if current_browser == browser_code:
+            print(f"跳过分类: bug #{bug_id} 已是 '{bug_type}'")
+            return False
+        if status in ("resolved", "closed"):
+            raise RuntimeError(
+                f"bug #{bug_id} 已是终态 '{status}'，当前分类编码 "
+                f"'{current_browser}' 与目标 '{browser_code}' 不一致；"
+                "停止自动修改，请人工确认"
+            )
+        if status != "active":
+            raise RuntimeError(
+                f"bug #{bug_id} 状态 '{status}' 不允许自动修改分类"
+            )
+
+        opened_build = bug.get("openedBuild", "")
+        if not opened_build:
+            raise RuntimeError(
+                f"bug #{bug_id} 缺少影响版本 openedBuild，停止分类编辑"
+            )
 
         form_data = urllib.parse.urlencode({
             "title": bug.get("title", ""),
             "severity": bug.get("severity", "3"),
             "pri": bug.get("pri", "3"),
             "type": bug.get("type", "codeerror"),
+            "openedBuild": opened_build,
             "browser": browser_code,
-        }).encode()
+        }, doseq=True).encode()
 
         url = f"{self.base_url}/bug-edit-{bug_id}.json"
         req = urllib.request.Request(url, data=form_data, method="POST")
         resp = self.opener.open(req)
         body = resp.read().decode()
         self._ensure_response_ok("set-browser-type", bug_id, body)
+
+        updated = self.get_bug_snapshot(bug_id)
+        updated_browser = str(updated.get("browser", ""))
+        updated_status = str(updated.get("status", ""))
+        if updated_browser != browser_code:
+            raise RuntimeError(
+                f"bug #{bug_id} 分类回读不一致: "
+                f"browser='{updated_browser}', expected='{browser_code}'"
+            )
+        if updated_status != "active":
+            raise RuntimeError(
+                f"bug #{bug_id} 分类编辑后状态被意外改为 "
+                f"'{updated_status}'，停止自动流程"
+            )
+
         print(body)
+        return True
 
     def _ensure_response_ok(self, action: str, bug_id: str, response: str):
         """检查禅道响应是否包含失败标志。"""
+        if re.search(r"\balert\s*\(", response, re.IGNORECASE):
+            raise RuntimeError(
+                f"禅道 {action} 失败（表单校验）。"
+                f"bug #{bug_id} 返回内容: {response}"
+            )
+
+        try:
+            payload = json.loads(response)
+        except (TypeError, ValueError):
+            payload = None
+        if isinstance(payload, dict):
+            if payload.get("status") == "fail" or payload.get("result") == "fail":
+                raise RuntimeError(
+                    f"禅道 {action} 失败。bug #{bug_id} 返回内容: {response}"
+                )
+
         if '"status":"fail"' in response or '"result":"fail"' in response:
             raise RuntimeError(
                 f"禅道 {action} 失败。bug #{bug_id} 返回内容: {response}"
