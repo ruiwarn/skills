@@ -1,0 +1,14 @@
+README.md
+  h_ef02cef13765d3 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6d378b381d34f7652e054e8ed4b4cc5e1a0a3065",
+  "prompts": {},
+  "humans": {
+    "h_ef02cef13765d3": {
+      "author": "ruiwarn <ruiwarn@gmail.com>"
+    }
+  }
+}
