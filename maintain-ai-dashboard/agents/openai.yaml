@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI 报销看板维护"
+  short_description: "通过 SSH 安全维护公司 Git AI 报销看板"
+  default_prompt: "使用 $maintain-ai-dashboard 检查并维护公司 AI 编程报销看板。"
