@@ -91,6 +91,7 @@ npx skills add https://github.com/tanweai/pua
 #人性化表达
 npx skills add https://github.com/galaxy-dawn/claude-scholar --skill writing-anti-ai
 npx skills add https://github.com/hardikpandya/stop-slop
+npx skills add https://github.com/op7418/humanizer-zh
 
 ```
 
