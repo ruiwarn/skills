@@ -1,0 +1,24 @@
+maintain-ai-dashboard/SKILL.md
+  h_ef02cef13765d3 1-58
+maintain-ai-dashboard/agents/openai.yaml
+  h_ef02cef13765d3 1-4
+maintain-ai-dashboard/references/operations.md
+  h_ef02cef13765d3 1-82
+maintain-ai-dashboard/references/project-background.md
+  h_ef02cef13765d3 1-58
+maintain-ai-dashboard/scripts/bootstrap_ssh.py
+  h_ef02cef13765d3 1-297
+maintain-ai-dashboard/scripts/preflight.py
+  h_ef02cef13765d3 1-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "082a728e35f36889714ecd3494ad1a014b4746fa",
+  "prompts": {},
+  "humans": {
+    "h_ef02cef13765d3": {
+      "author": "ruiwarn <ruiwarn@gmail.com>"
+    }
+  }
+}
