@@ -54,6 +54,17 @@ def contains_gitlab_mr_link(comment: str) -> bool:
     """Check if comment contains a GitLab MR URL."""
     return bool(re.search(r'https?://[^\s]+/-/merge_requests/\d+', comment))
 
+
+def contains_gitlab_code_ref_link(comment: str) -> bool:
+    """Check if comment contains a GitLab MR or commit URL (a code reference).
+
+    用于「修复已直接提交、未走 MR 分支」的场景：此时用 commit 链接作为
+    代码引用替代 MR 链接。兼容原有 MR 链接。
+    """
+    return bool(
+        re.search(r'https?://[^\s]+/-/(?:merge_requests/\d+|commit/[0-9a-fA-F]{7,})', comment)
+    )
+
 # ---------------------------------------------------------------------------
 # Git operations
 # ---------------------------------------------------------------------------
@@ -157,8 +168,8 @@ def zentao_resolve(client: ZentaoClient, bug_id: str, comment: str,
     if not bug_id:
         print("错误: 用法 zentao-resolve <bug_id> [comment]", file=sys.stderr)
         sys.exit(1)
-    if not contains_gitlab_mr_link(comment):
-        print("错误: 解决评论中必须包含 GitLab MR 链接。请先创建 MR 再回写禅道。", file=sys.stderr)
+    if not contains_gitlab_code_ref_link(comment):
+        print("错误: 解决评论中必须包含 GitLab MR 或 commit 链接。请先创建 MR 或引用提交再回写禅道。", file=sys.stderr)
         sys.exit(1)
     comment = format_zentao_clickable_links(comment)
     client.resolve_bug(bug_id, "fixed", comment, assigned_to, "")
@@ -182,9 +193,9 @@ def zentao_writeback(client: ZentaoClient, bug_id: str, bug_type: str,
         print("正确格式: http://172.17.0.100:8080/<group>/<project>/-/issues/<number>", file=sys.stderr)
         sys.exit(1)
 
-    if not contains_gitlab_mr_link(mr_url):
+    if not contains_gitlab_code_ref_link(mr_url):
         print(f"错误: mr_url 格式不正确: {mr_url}", file=sys.stderr)
-        print("正确格式: http://172.17.0.100:8080/<group>/<project>/-/merge_requests/<number>", file=sys.stderr)
+        print("正确格式: .../-/merge_requests/<number> 或 .../-/commit/<hash>（直接提交时用 commit 链接）", file=sys.stderr)
         sys.exit(1)
 
     print("==========================================")
@@ -207,7 +218,10 @@ def zentao_writeback(client: ZentaoClient, bug_id: str, bug_type: str,
 
     # Step 4/5 - don't pass bug_type since already set in step 3
     print("\n>>> 步骤 4/5: 解决 Bug（附带 MR 链接）...")
-    resolve_comment = format_zentao_clickable_links(f"已创建 GitLab MR: {mr_url}")
+    if contains_gitlab_mr_link(mr_url):
+        resolve_comment = format_zentao_clickable_links(f"已创建 GitLab MR: {mr_url}")
+    else:
+        resolve_comment = format_zentao_clickable_links(f"代码提交参考链接（已直接提交并发布，未走 MR）: {mr_url}")
     client.resolve_bug(bug_id, "fixed", resolve_comment, project_owner, "")
 
     # 最终只相信回读状态，不根据请求成功或中间输出宣称完成。

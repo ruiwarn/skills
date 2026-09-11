@@ -15,7 +15,7 @@ description: Use when the user asks to fix, resume, or finish a bug workflow inv
 |------|------|
 | F1 | **禁止在 develop / main / master 分支上直接 commit 或 push** |
 | F2 | **禁止无视用户明确指定的起点；缺少当前阶段必需信息时必须先补齐，不能盲目执行** |
-| F3 | **禁止在没有创建 MR 的情况下回写禅道** |
+| F3 | **禁止在没有创建 MR（且没有可用的 commit 代码引用）的情况下回写禅道** — 默认必须走 MR；仅「修复已直接提交并发布」场景可用 commit 链接作为代码引用（见下方「直接提交场景」） |
 | F4 | **禁止把 bug 分类/类型写入评论 — 必须通过脚本写入 browser 字段** |
 | F5 | **禁止把 issue / MR 描述内容直接拼成命令行参数 — 必须先写入文件** |
 | F6 | **禁止提交与当前 bug 无关的代码改动** |
@@ -50,6 +50,13 @@ description: Use when the user asks to fix, resume, or finish a bug workflow inv
 3. **只在当前阶段缺少关键信息时再提问。** 例如当前阶段需要 `bug_id` / 禅道链接，而上下文里没有时，再向用户索要；不要一上来把阶段 0→3 全部重跑。
 4. **用户明确要求进入阶段 4 / 5 / 6 / 7，可视为对该阶段动作的授权。** 不要针对同一动作重复索要“是否允许创建分支 / 提交 / 推送 / 建 MR”。
 5. **真正的硬前置条件不能跳过。** 尤其阶段 7 之前，必须有验证结果、远程分支、`ISSUE_URL`、`MR_URL`。
+
+> **⚠️ 直接提交场景（无新代码改动）**：当修复**已直接提交到 develop 并随版本发布**（`git status` 干净、无待提交改动）时，**不要**为了“走流程”而重建分支/提交/MR——那只会产生空 MR 或与已发布代码重复的改动。此时：
+> - **跳过阶段 4 与阶段 6**（不建分支、不提交、不建 MR）；
+> - 用该 commit 的链接 `.../-/commit/<hash>` 作为**代码引用**替代 `MR_URL`，进入阶段 5（建 Issue）与阶段 7（回写禅道）；
+> - Issue 与禅道评论里注明“已直接提交并发布，未走 MR”，并附上 commit 链接；
+> - F3 对此场景放行（以 commit 链接作为代码引用）。
+> 判断依据：先在阶段 2/4.0 用 `git log`/`git status` 确认修复是否已落在 develop；已落地就走本场景，未落地才走标准分支/MR 流程。
 
 ---
 
@@ -176,6 +183,8 @@ description: Use when the user asks to fix, resume, or finish a bug workflow inv
 
 > ⛔ **必须有用户明确意图才能执行本阶段。** 用户直接说“从阶段 4 开始”或“帮我提交并推送”或“BUG已经改完了，从后面的阶段开始”即可视为已授权且从该阶段直接开始，不要重复追问。
 
+> **若属于「直接提交场景」（修复已在 develop 上、工作区干净）：跳过本阶段，不建分支、不提交、不推送**，直接进入阶段 5。
+
 **4.0 如果代码已经存在，先分析当前修改：**
 1. 查看 `git status --short`
 2. 查看 `git diff --stat`、`git diff`、`git diff --cached`
@@ -243,6 +252,8 @@ Issue 必须至少包含：
 
 如果用户明确要求从阶段 6 开始，即视为允许创建 MR；不要再重复询问。MR 描述中的修复内容、根因、修改文件、验证结果应优先复用前面已分析好的信息，而不是重新回退到阶段 0。
 
+> **若属于「直接提交场景」（修复已在 develop 上、工作区干净）：跳过本阶段，不建 MR**，用 `.../-/commit/<hash>` 的 commit 链接作为代码引用（替代 `MR_URL`）进入阶段 7。
+
 **6.1 准备 MR 描述：**
 使用跨平台命令复制模板到系统临时目录：
 ```text
@@ -270,7 +281,7 @@ MR 描述必须包含：修复内容、根因、修改文件、验证结果、�
 > - ✅ 阶段 3 验证已通过
 > - ✅ 阶段 4 代码已 push 到远程
 > - ✅ 阶段 5 已创建 Issue，有 ISSUE_URL
-> - ✅ 阶段 6 已创建 MR，有 MR_URL
+> - ✅ 阶段 6 已创建 MR，有 MR_URL（或直接提交场景下可用的 commit 代码引用链接）
 > - 缺少任何一项，⛔ 禁止执行本阶段
 
 ### 回写状态决策（脚本和执行者都必须遵守）
@@ -316,7 +327,7 @@ MR 描述必须包含：修复内容、根因、修改文件、验证结果、�
 1. ✅ 检查 Bug 当前状态（避免重复操作）
 2. ✅ 仅在 `active` 且未确认时确认 Bug，评论附带 Issue 可点击链接
 3. ✅ 仅在 `active` 且分类不同时设置 `browser` 字段
-4. ✅ 仅在仍为 `active` 时解决 Bug，评论附带 MR 可点击链接
+4. ✅ 仅在仍为 `active` 时解决 Bug，评论附带 MR / commit 可点击链接
 5. ✅ 回读并校验最终状态、确认标志和分类编码
 
 **参数说明：**
@@ -325,7 +336,7 @@ MR 描述必须包含：修复内容、根因、修改文件、验证结果、�
 | `bug_id` | 禅道 Bug 编号 | `5245` |
 | `bug_type` | 阶段 1 预判的中文分类名 | `"编码_流程逻辑实现问题"` |
 | `ISSUE_URL` | 阶段 5 获得的 GitLab Issue URL | `"http://172.17.0.100:8080/grp/proj/-/issues/42"` |
-| `MR_URL` | 阶段 6 获得的 GitLab MR URL | `"http://172.17.0.100:8080/grp/proj/-/merge_requests/9"` |
+| `MR_URL` | 阶段 6 获得的 GitLab MR URL；直接提交场景下填 commit 链接 `.../-/commit/<hash>` | `"http://172.17.0.100:8080/grp/proj/-/merge_requests/9"` |
 
 > ⛔ **四个参数全部必填 — 脚本会拒绝不完整的调用**
 > ⛔ **严禁手动拼接禅道 API 调用来替代本命令**
@@ -352,9 +363,9 @@ MR 描述必须包含：修复内容、根因、修改文件、验证结果、�
 |------|------|
 | 禅道 Bug | #bug_id - 标题 |
 | Bug 分类 | bug_type（已写入 browser 字段） |
-| 修复分支 | bugfix/bug_id-short-desc |
+| 修复分支 | bugfix/bug_id-short-desc（直接提交场景：无分支，引用 commit） |
 | GitLab Issue | ISSUE_URL |
-| GitLab MR | MR_URL |
+| GitLab MR / 代码引用 | MR_URL（直接提交场景：commit 链接） |
 | 修改文件 | 文件列表 |
 | 验证结果 | 静态检查 ✅ / 构建 ✅ |
 
@@ -378,7 +389,7 @@ MR 描述必须包含：修复内容、根因、修改文件、验证结果、�
 # 2. 设置 browser 字段（传中文分类名，不是写评论！）
 <RUNNER> zentao-set-browser-type <bug_id> "<bug_type>"
 
-# 3. 解决 Bug（分类已经正确且状态仍为 active 时才执行）
+# 3. 解决 Bug（分类已经正确且状态仍为 active 时才执行；<MR_URL> 直接提交场景下可为 commit 链接）
 <RUNNER> zentao-resolve <bug_id> "已创建 GitLab MR: <MR_URL>" ""
 ```
 
