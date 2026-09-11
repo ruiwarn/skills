@@ -1,0 +1,29 @@
+zc-bug-fix/SKILL.md
+  s_dd23aaba4f5865::t_9cd9b76dbd7e31 186-187
+  s_dd23aaba4f5865::t_a8d8698e7c7e17 18
+  s_dd23aaba4f5865::t_541cacd0d22c03 339
+  s_dd23aaba4f5865::t_5549e8ffc0dd14 54-60
+  s_dd23aaba4f5865::t_00a25288f1ce03 366,368
+  s_dd23aaba4f5865::t_c4156d4ff1b875 255-256
+  s_dd23aaba4f5865::t_0d69694032ef68 330
+  s_dd23aaba4f5865::t_4bb5e69090f412 284
+  s_dd23aaba4f5865::t_711296f149392f 392
+zc-bug-fix/scripts/bugfix_flow.py
+  s_dd23aaba4f5865::t_a512f89af49aab 57-67,171-172,196,198,221-224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a521bf855851c2c1bd7ee31fb0ac3e5e1ead8400",
+  "prompts": {},
+  "sessions": {
+    "s_dd23aaba4f5865": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_f3ea670a-69d3-4291-8ff1-30e75632288b",
+        "model": "gpt-qwen3.8-27b"
+      },
+      "human_author": "ruiwarn <ruiwarn@gmail.com>"
+    }
+  }
+}
