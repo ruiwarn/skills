@@ -252,6 +252,22 @@ detect_compdb() {
     else
         echo -e "${YELLOW}警告: 未找到 compile_commands.json，clang-tidy 可能无法正常工作${NC}" >&2
     fi
+
+    # 交叉编译场景: 从编译数据库提取工具链自带系统头目录 (如 armclang 的 include)。
+    # 宿主 clang-tidy 不认识交叉编译器的隐式头路径, 不注入会报 string.h not found,
+    # 并级联触发依赖这些头的 #if/#error 守卫误报。
+    TOOLCHAIN_INCLUDE_DIR=""
+    if [[ -n "$COMPDB_DIR" && -f "$COMPDB_DIR/compile_commands.json" ]]; then
+        local cc inc
+        cc=$(sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^" ]*\).*/\1/p' \
+             "$COMPDB_DIR/compile_commands.json" | head -1)
+        cc=${cc//\\\\/\\}   # JSON 转义 \\ 还原为 \
+        cc=${cc//\\//}      # 反斜杠转正斜杠, 供 Git Bash 使用
+        if [[ -n "$cc" ]]; then
+            inc="$(dirname "$cc")/../include"
+            [[ -f "$inc/string.h" ]] && TOOLCHAIN_INCLUDE_DIR="$inc"
+        fi
+    fi
 }
 
 # 检查是否应该忽略该警告
@@ -463,6 +479,7 @@ run_clang_tidy() {
     [[ -n "$COMPDB_DIR" ]] && cmd="$cmd -p $COMPDB_DIR"
     cmd="$cmd --checks=$CHECKS"
     [[ -n "$HEADER_FILTER" ]] && cmd="$cmd -header-filter=$HEADER_FILTER"
+    [[ -n "$TOOLCHAIN_INCLUDE_DIR" ]] && cmd="$cmd --extra-arg=-isystem --extra-arg=$TOOLCHAIN_INCLUDE_DIR"
     cmd="$cmd $file"
 
     local output
@@ -484,10 +501,25 @@ run_cppcheck() {
     fi
 
     local output
-    output=$(cppcheck --enable="$DEFAULT_CPPCHECK_ENABLE" \
-        --suppress=missingIncludeSystem \
-        --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
-        --quiet "$file" 2>&1 || true)
+    if [[ -n "$COMPDB_DIR" && -f "$COMPDB_DIR/compile_commands.json" ]]; then
+        # 有编译数据库: 走 --project 模式获取真实宏定义/头路径, 避免 #error 守卫等
+        # 预处理误报; -D__ARMCC_VERSION 模拟 armclang 预定义宏 (cppcheck 不模拟);
+        # drivers/cmsis 是芯片厂商头, 寄存器地址访问对静态分析天然误报, 抑制。
+        local ffilter="${file//\\//}"
+        output=$(cppcheck --enable="$DEFAULT_CPPCHECK_ENABLE" \
+            --suppress=missingIncludeSystem \
+            --project="$COMPDB_DIR/compile_commands.json" \
+            --file-filter="*$ffilter" \
+            -D__ARMCC_VERSION=6240000 \
+            '--suppress=*:drivers\cmsis\*' \
+            --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
+            --quiet 2>&1 || true)
+    else
+        output=$(cppcheck --enable="$DEFAULT_CPPCHECK_ENABLE" \
+            --suppress=missingIncludeSystem \
+            --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
+            --quiet "$file" 2>&1 || true)
+    fi
     parse_cppcheck_output "$output"
 }
 
