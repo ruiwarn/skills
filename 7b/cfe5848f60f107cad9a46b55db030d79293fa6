@@ -1,0 +1,19 @@
+c-verify-skill/scripts/run_c_checks.sh
+  s_f988674d9fdbbb::t_0ebbea059b75c8 255-270,482,504-522
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7bcfe5848f60f107cad9a46b55db030d79293fa6",
+  "prompts": {},
+  "sessions": {
+    "s_f988674d9fdbbb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d5ebbfac-b2f7-41e9-9ea0-e1bd8d5b64d5",
+        "model": "k3-256k"
+      },
+      "human_author": "ruiwarn <ruiwarn@gmail.com>"
+    }
+  }
+}
